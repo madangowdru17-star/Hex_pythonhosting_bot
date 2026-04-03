@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-BOT_TOKEN = "8759695144:AAE1FtyjdWpjqGxRTRZmqf2rP50JDK47K6A"
+BOT_TOKEN = "8759695144:AAGfZ3DKgvK3HLrQ5v5uWDLv0bsAqpoKN4Q"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
