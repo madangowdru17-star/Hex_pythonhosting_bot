@@ -13,7 +13,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 BOT_TOKEN = "8759695144:AAGfZ3DKgvK3HLrQ5v5uWDLv0bsAqpoKN4Q"
 
 # Admin Configuration
-ADMIN_ID = 8446135201  # YOUR CHAT ID - REPLACE WITH YOUR ACTUAL CHAT ID
+ADMIN_ID = 8446135201  # REPLACE WITH YOUR ACTUAL CHAT ID
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -32,7 +32,7 @@ admin_stats = {
     "bot_start_time": datetime.now()
 }
 
-# ============== PROFESSIONAL UI ==============
+# ============== SIMPLE UI ==============
 
 def get_main_keyboard(user_id):
     """Get main keyboard based on user role"""
@@ -78,18 +78,6 @@ def get_admin_keyboard():
         InlineKeyboardButton("❌ Close", callback_data="admin_close")
     )
     return markup
-
-def format_header(title, icon="🚀"):
-    """Professional header formatter"""
-    return f"""
-╔════════════════════════════════════════╗
-║  {icon}  {title:<35}  ║
-╚════════════════════════════════════════╝
-"""
-
-def format_footer():
-    """Professional footer"""
-    return "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💻 Powered by @Hexh4ckerOFC"
 
 # ============== ADMIN FUNCTIONS ==============
 
@@ -170,9 +158,9 @@ def start(msg):
     total_projects = len(get_user_projects(user_id))
     
     welcome_text = f"""
-{format_header("WELCOME TO PYTHON HOSTING", "🔥")}
+🔥 *WELCOME TO PYTHON HOSTING*
 
-✨ *Premium Python Hosting Panel*
+✨ *Hex Python Hosting Panel*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ User-Specific Workspaces
 ✅ No File Conflicts Between Users
@@ -187,7 +175,8 @@ def start(msg):
 └─ Role: {'👑 ADMIN' if is_admin else '👤 USER'}
 
 💡 *Need Help?* @Hexh4ckerOFC
-{format_footer()}
+
+💻 *Powered by @Hexh4ckerOFC*
     """
     
     bot.send_message(msg.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
@@ -199,7 +188,7 @@ def start(msg):
         minutes, seconds = divmod(remainder, 60)
         
         admin_notice = f"""
-{format_header("ADMIN PANEL LOADED", "👑")}
+👑 *ADMIN PANEL LOADED*
 
 📊 *Quick Stats:*
 ├─ Total Users: {admin_stats['total_users']}
@@ -208,7 +197,8 @@ def start(msg):
 └─ Uptime: {hours}h {minutes}m
 
 Use the *Admin Panel* button for full control.
-{format_footer()}
+
+💻 *Powered by @Hexh4ckerOFC*
         """
         bot.send_message(msg.chat.id, admin_notice, parse_mode="Markdown")
 
@@ -226,7 +216,7 @@ def admin_panel(msg):
     minutes, seconds = divmod(remainder, 60)
     
     admin_text = f"""
-{format_header("ADMIN CONTROL PANEL", "👑")}
+👑 *ADMIN CONTROL PANEL*
 
 📈 *SYSTEM STATISTICS*
 ├─ 👥 Total Users: {admin_stats['total_users']}
@@ -244,7 +234,8 @@ def admin_panel(msg):
 • Broadcast messages to all users
 • Clean orphaned processes
 • View server statistics
-{format_footer()}
+
+💻 *Powered by @Hexh4ckerOFC*
     """
     
     bot.send_message(msg.chat.id, admin_text, parse_mode="Markdown", reply_markup=get_admin_keyboard())
@@ -264,12 +255,12 @@ def handle_admin_callbacks(call):
         if not users:
             bot.edit_message_text("📭 *No users found*", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         else:
-            user_list = f"{format_header('ALL USERS LIST', '👥')}\n"
+            user_list = f"👥 *ALL USERS LIST*\n━━━━━━━━━━━━━━━━━━━━━━\n"
             for uid in users:
                 project_count = get_user_project_count(uid)
                 running_count = len(running_projects.get(uid, {}))
                 user_list += f"\n👤 `{uid}`\n├─ 📦 {project_count} projects\n└─ 🟢 {running_count} running\n"
-            user_list += format_footer()
+            user_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
             
             if len(user_list) > 4000:
                 user_list = user_list[:4000] + "\n... (truncated)"
@@ -280,13 +271,13 @@ def handle_admin_callbacks(call):
     
     elif action == "projects":
         update_admin_stats()
-        text = f"{format_header('ALL PROJECTS SUMMARY', '📦')}\n"
+        text = f"📦 *ALL PROJECTS SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n"
         text += f"├─ Total Projects: {admin_stats['total_projects']}\n"
         text += f"├─ Running: {admin_stats['total_running']} 🟢\n"
         text += f"└─ Stopped: {admin_stats['total_projects'] - admin_stats['total_running']} ⚪\n"
         
         users = get_all_users()
-        for uid in users[:10]:  # Show first 10 users to avoid message too long
+        for uid in users[:10]:
             user_projects = get_user_projects(uid)
             if user_projects:
                 text += f"\n👤 User `{uid}`:\n"
@@ -297,7 +288,7 @@ def handle_admin_callbacks(call):
                 if len(user_projects) > 5:
                     text += f"  ... and {len(user_projects)-5} more\n"
         
-        text += format_footer()
+        text += f"\n💻 *Powered by @Hexh4ckerOFC*"
         
         if len(text) > 4000:
             text = text[:4000] + "\n... (truncated)"
@@ -307,7 +298,7 @@ def handle_admin_callbacks(call):
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     
     elif action == "running":
-        running_list = f"{format_header('RUNNING PROJECTS', '🟢')}\n"
+        running_list = f"🟢 *RUNNING PROJECTS*\n━━━━━━━━━━━━━━━━━━━━━━\n"
         has_running = False
         for user_id, user_projects in running_projects.items():
             if user_projects:
@@ -319,14 +310,14 @@ def handle_admin_callbacks(call):
         if not has_running:
             running_list += "\n📭 *No projects currently running*"
         
-        running_list += format_footer()
+        running_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
         bot.edit_message_text(running_list, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     
     elif action == "errors":
-        error_list = f"{format_header('ERROR LOGS', '⚠️')}\n"
+        error_list = f"⚠️ *ERROR LOGS*\n━━━━━━━━━━━━━━━━━━━━━━\n"
         has_errors = False
         for user_id, errors in project_errors.items():
             if errors:
@@ -338,7 +329,7 @@ def handle_admin_callbacks(call):
         if not has_errors:
             error_list += "\n✅ *No errors logged*"
         
-        error_list += format_footer()
+        error_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
         
         if len(error_list) > 4000:
             error_list = error_list[:4000] + "\n... (truncated)"
@@ -356,7 +347,8 @@ def handle_admin_callbacks(call):
             disk_percent = (disk_usage.used / disk_usage.total) * 100
             
             server_text = f"""
-{format_header('SERVER STATISTICS', '💾')}
+💾 *SERVER STATISTICS*
+━━━━━━━━━━━━━━━━━━━━━━
 
 💿 *DISK USAGE*
 ├─ Total: {disk_total} GB
@@ -368,10 +360,10 @@ def handle_admin_callbacks(call):
 ├─ Base Dir: {BASE_DIR}
 └─ Projects Path: {os.path.abspath(BASE_DIR)}
 
-{format_footer()}
+💻 *Powered by @Hexh4ckerOFC*
             """
         except:
-            server_text = f"{format_header('SERVER STATISTICS', '💾')}\n❌ Unable to fetch disk statistics{format_footer()}"
+            server_text = f"💾 *SERVER STATISTICS*\n━━━━━━━━━━━━━━━━━━━━━━\n❌ Unable to fetch disk statistics\n\n💻 *Powered by @Hexh4ckerOFC*"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
@@ -384,7 +376,8 @@ def handle_admin_callbacks(call):
         minutes, seconds = divmod(remainder, 60)
         
         stats_text = f"""
-{format_header('BOT STATISTICS', '📊')}
+📊 *BOT STATISTICS*
+━━━━━━━━━━━━━━━━━━━━━━
 
 📈 *USAGE STATS*
 ├─ 👥 Total Users: {admin_stats['total_users']}
@@ -401,7 +394,7 @@ def handle_admin_callbacks(call):
 ├─ Python: {sys.version.split()[0]}
 └─ Platform: {sys.platform}
 
-{format_footer()}
+💻 *Powered by @Hexh4ckerOFC*
         """
         
         markup = InlineKeyboardMarkup()
@@ -442,7 +435,7 @@ def process_broadcast(msg):
     
     bot.send_message(msg.chat.id, "👑 Admin Panel", reply_markup=get_admin_keyboard())
 
-# ============== USER COMMANDS (PRESERVED ORIGINAL FUNCTIONALITY) ==============
+# ============== USER COMMANDS ==============
 
 @bot.message_handler(func=lambda m: m.text == "📦 Upload" or m.text == "📦 Upload Project")
 def upload_btn(msg):
@@ -458,7 +451,7 @@ def file_manager(msg):
         bot.send_message(msg.chat.id, "📂 *No projects found*\nUse 📦 Upload to add one.", parse_mode="Markdown")
         return
     
-    project_list = f"{format_header('YOUR PROJECTS', '📁')}\n"
+    project_list = f"📁 *YOUR PROJECTS*\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for project in projects:
         is_running = project in user_running
         has_main = os.path.exists(os.path.join(get_user_dir(user_id), project, "main.py"))
@@ -471,7 +464,7 @@ def file_manager(msg):
         
         project_list += f"\n{status_icon} `{project}`\n   ├─ main.py: {main_icon}\n   └─ Status: {error_icon}\n"
     
-    project_list += format_footer()
+    project_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
     bot.send_message(msg.chat.id, project_list, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "▶️ Start")
@@ -570,7 +563,8 @@ def server_info(msg):
         disk_text = "N/A"
     
     stats_text = f"""
-{format_header('YOUR STATISTICS', '📊')}
+📊 *YOUR STATISTICS*
+━━━━━━━━━━━━━━━━━━━━━━
 
 📦 *PROJECTS*
 ├─ Total: {total_projects}
@@ -587,7 +581,8 @@ def server_info(msg):
 
 🕐 *Server Time*
 └─ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-{format_footer()}
+
+💻 *Powered by @Hexh4ckerOFC*
     """
     bot.send_message(msg.chat.id, stats_text, parse_mode="Markdown")
 
@@ -622,20 +617,21 @@ def view_errors(msg):
         bot.send_message(msg.chat.id, "✅ *No errors logged! All projects running smoothly.*", parse_mode="Markdown")
         return
     
-    error_text = f"{format_header('ERROR LOG', '⚠️')}\n"
+    error_text = f"⚠️ *ERROR LOG*\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for project, error in user_errors.items():
         error_text += f"\n📁 `{project}`\n└─ {error[:100]}\n"
     
     if len(error_text) > 4000:
         error_text = error_text[:4000] + "\n... (truncated)"
     
-    error_text += format_footer()
+    error_text += f"\n💻 *Powered by @Hexh4ckerOFC*"
     bot.send_message(msg.chat.id, error_text, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "❓ Help")
 def help_command(msg):
     help_text = f"""
-{format_header('HELP MENU', '📚')}
+📚 *HELP MENU*
+━━━━━━━━━━━━━━━━━━━━━━
 
 🎯 *PROJECT MANAGEMENT*
 📦 Upload - Deploy new .zip project
@@ -666,11 +662,12 @@ def help_command(msg):
 Contact: @Hexh4ckerOFC
 
 🟢 *Bot Status: ONLINE & FULLY WORKING*
-{format_footer()}
+
+💻 *Powered by @Hexh4ckerOFC*
     """
     bot.send_message(msg.chat.id, help_text, parse_mode="Markdown")
 
-# ============== CALLBACK HANDLERS (PRESERVED) ==============
+# ============== CALLBACK HANDLERS ==============
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
@@ -749,7 +746,7 @@ def handle_callbacks(call):
     
     bot.answer_callback_query(call.id)
 
-# ============== CORE FUNCTIONS (PRESERVED) ==============
+# ============== CORE FUNCTIONS ==============
 
 def get_user_dir(user_id):
     user_dir = os.path.join(BASE_DIR, str(user_id))
@@ -989,21 +986,15 @@ monitor_thread.start()
 
 # ============== BOT STARTUP ==============
 
-print("="*60)
-print("🔥 PYTHON HOSTING PANEL - PROFESSIONAL EDITION")
-print("="*60)
+print("="*50)
+print("🔥 PYTHON HOSTING PANEL - READY")
+print("="*50)
 print("✅ Bot Running Successfully!")
 print(f"📁 Base Directory: {BASE_DIR}")
 print(f"👥 Multi-User Support: ENABLED")
 print(f"🔒 Private Workspaces: YES")
 print(f"👑 Admin ID: {ADMIN_ID}")
 print(f"💬 Support: @Hexh4ckerOFC")
-print("="*60)
-print("✨ PROFESSIONAL UI LOADED!")
-print("   - Enhanced visual design")
-print("   - Admin control panel")
-print("   - User-specific workspaces")
-print("   - Complete data isolation")
-print("="*60)
+print("="*50)
 
 bot.infinity_polling()
