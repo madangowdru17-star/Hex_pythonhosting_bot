@@ -16,7 +16,7 @@ import re
 BOT_TOKEN = "8389147569:AAGF2RxBRe8AiaW0_wN4rooJ5WF06zYtMho"
 
 # Admin Configuration
-ADMIN_ID = 8446135201
+ADMIN_ID = 7643981409
 
 # Video Configuration - Add your video file ID or URL
 # OPTION 1: Use a video file ID from Telegram (after sending video to bot)
@@ -60,9 +60,9 @@ class AutoDeleteBot(telebot.TeleBot):
         threading.Thread(target=delete_later, daemon=True).start()
         return msg
     
-    def send_video(self, chat_id, video, *args, **kwargs):
-        """Send video and auto-delete after 30 seconds"""
-        msg = super().send_video(chat_id, video, *args, **kwargs)
+    def send_video(self, chat_id, video, caption=None, *args, **kwargs):
+        """Send video with caption and auto-delete after 30 seconds"""
+        msg = super().send_video(chat_id, video, caption=caption, *args, **kwargs)
         
         def delete_later():
             time.sleep(30)
@@ -177,28 +177,61 @@ def safe_send_message(chat_id, text, reply_markup=None, parse_mode=None):
         plain_text = re.sub(r'[*_`~]', '', text)
         return bot.send_message(chat_id, plain_text, reply_markup=reply_markup)
 
-def send_start_video(chat_id):
-    """Send the start video to user"""
+def get_welcome_text(user_id, is_admin, total_projects, monthly_users):
+    """Generate the welcome text message"""
+    welcome_text = f"""
+🔥 *WELCOME TO PYTHON HOSTING*
+
+✨ *Hex Python Hosting Panel v3.0*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ User-Specific Workspaces
+✅ GitHub Repository Deploy
+✅ Auto-Detect Entry Points
+✅ Environment Variables Support
+✅ Auto-Delete Messages (30 sec)
+✅ 24/7 Project Hosting
+
+📊 *MONTHLY STATS*
+├─ Active Users: {monthly_users:,}
+└─ This Month: {datetime.now().strftime('%B %Y')}
+
+👤 *Your Workspace:*
+├─ User ID: `{user_id}`
+├─ Projects: {total_projects}
+├─ Running: {len(get_user_running_projects(user_id))}
+└─ Role: {'👑 ADMIN' if is_admin else '👤 USER'}
+
+💡 *Need Help?* @Hexh4ckerOFC
+
+💻 *Powered by @Hexh4ckerOFC*
+    """
+    return welcome_text
+
+def send_start_video_with_text(chat_id, user_id, is_admin, total_projects, monthly_users):
+    """Send video with the welcome text as caption"""
+    welcome_text = get_welcome_text(user_id, is_admin, total_projects, monthly_users)
+    
     try:
         # Try to send video based on configuration
         if START_VIDEO_FILE_ID:
-            # Send using file ID (fastest)
-            bot.send_video(chat_id, START_VIDEO_FILE_ID, caption="🎬 *Welcome to Hex Python Hosting!*", parse_mode="Markdown")
+            # Send using file ID with caption
+            bot.send_video(chat_id, START_VIDEO_FILE_ID, caption=welcome_text, parse_mode="Markdown")
             return True
         elif START_VIDEO_URL:
-            # Send using URL
-            bot.send_video(chat_id, START_VIDEO_URL, caption="🎬 *Welcome to Hex Python Hosting!*", parse_mode="Markdown")
+            # Send using URL with caption
+            bot.send_video(chat_id, START_VIDEO_URL, caption=welcome_text, parse_mode="Markdown")
             return True
         elif USE_LOCAL_VIDEO and os.path.exists(LOCAL_VIDEO_PATH):
-            # Send local video file
+            # Send local video file with caption
             with open(LOCAL_VIDEO_PATH, 'rb') as video:
-                bot.send_video(chat_id, video, caption="🎬 *Welcome to Hex Python Hosting!*", parse_mode="Markdown")
+                bot.send_video(chat_id, video, caption=welcome_text, parse_mode="Markdown")
             return True
         else:
-            # No video configured, skip
+            # No video configured, send only text
             return False
     except Exception as e:
-        print(f"Failed to send video: {e}")
+        print(f"Failed to send video with caption: {e}")
+        # If video fails, send only text
         return False
 
 # ============== SIMPLE UI ==============
@@ -623,7 +656,7 @@ def env_list_vars(call):
 def env_back(call):
     env_vars_menu(call.message)
 
-# ============== START COMMAND WITH VIDEO ==============
+# ============== START COMMAND WITH VIDEO + TEXT AS CAPTION ==============
 
 @bot.message_handler(commands=['start'])
 def start(msg):
@@ -631,45 +664,20 @@ def start(msg):
     track_user_activity(user_id, is_command=True)
     is_admin = (user_id == ADMIN_ID)
     total_projects = len(get_user_projects(user_id))
-    
     monthly_users = get_monthly_users_count()
     
-    # First: Send the video (if configured)
-    video_sent = send_start_video(user_id)
+    # Send video with welcome text as caption (combined in one message)
+    video_sent = send_start_video_with_text(user_id, user_id, is_admin, total_projects, monthly_users)
     
-    # Small delay to ensure video sends first
-    if video_sent:
-        time.sleep(1)
-    
-    # Second: Send the normal text message
-    welcome_text = f"""
-🔥 *WELCOME TO PYTHON HOSTING*
-
-✨ *Hex Python Hosting Panel v3.0*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ User-Specific Workspaces
-✅ GitHub Repository Deploy
-✅ Auto-Detect Entry Points
-✅ Environment Variables Support
-✅ Auto-Delete Messages (30 sec)
-✅ 24/7 Project Hosting
-
-📊 *MONTHLY STATS*
-├─ Active Users: {monthly_users:,}
-└─ This Month: {datetime.now().strftime('%B %Y')}
-
-👤 *Your Workspace:*
-├─ User ID: `{user_id}`
-├─ Projects: {total_projects}
-├─ Running: {len(get_user_running_projects(user_id))}
-└─ Role: {'👑 ADMIN' if is_admin else '👤 USER'}
-
-💡 *Need Help?* @Hexh4ckerOFC
-
-💻 *Powered by @Hexh4ckerOFC*
-    """
-    
-    safe_send_message(msg.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
+    # If video failed to send or no video configured, send only text
+    if not video_sent:
+        welcome_text = get_welcome_text(user_id, is_admin, total_projects, monthly_users)
+        safe_send_message(msg.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
+    else:
+        # Still need to send the keyboard (buttons) after video
+        # Send just the keyboard as a separate message
+        keyboard_msg = "Use the buttons below to control your projects:"
+        safe_send_message(msg.chat.id, keyboard_msg, reply_markup=get_main_keyboard(user_id))
     
     if is_admin:
         update_admin_stats()
