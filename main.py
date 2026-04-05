@@ -9,7 +9,6 @@ import signal
 import sys
 from datetime import datetime
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-import git
 import requests
 import json
 import tempfile
@@ -36,6 +35,9 @@ admin_stats = {
     "bot_start_time": datetime.now()
 }
 
+# Store environment variables
+project_env_vars = {}
+
 # ============== SIMPLE UI ==============
 
 def get_main_keyboard(user_id):
@@ -49,7 +51,7 @@ def get_main_keyboard(user_id):
             "📁 My Projects", "▶️ Start", "⏹️ Stop",
             "🔄 Restart", "🗑️ Delete", "🗑️ Delete All",
             "📊 Stats", "🔄 Refresh", "📝 Errors",
-            "🌐 Web URL", "⚙️ Env Vars", "👑 Admin Panel", "❓ Help"
+            "⚙️ Env Vars", "👑 Admin Panel", "❓ Help"
         ]
         markup.add(*buttons)
         return markup
@@ -59,7 +61,7 @@ def get_main_keyboard(user_id):
             "📦 Upload", "🐙 GitHub Deploy", "📁 Projects",
             "▶️ Start", "⏹️ Stop", "🔄 Restart", "🗑️ Delete",
             "🗑️ Delete All", "📊 Stats", "🔄 Refresh",
-            "📝 Errors", "🌐 Web URL", "⚙️ Env Vars", "❓ Help"
+            "📝 Errors", "⚙️ Env Vars", "❓ Help"
         ]
         markup.add(*buttons)
         return markup
@@ -76,157 +78,31 @@ def get_admin_keyboard():
         InlineKeyboardButton("📊 Bot Stats", callback_data="admin_botstats"),
         InlineKeyboardButton("🗑️ Clean Orphaned", callback_data="admin_clean"),
         InlineKeyboardButton("🔄 Broadcast", callback_data="admin_broadcast"),
-        InlineKeyboardButton("🌐 Public Ports", callback_data="admin_ports"),
         InlineKeyboardButton("❌ Close", callback_data="admin_close")
     )
     return markup
 
-# ============== GITHUB INTEGRATION ==============
-
-# Store web URLs and environment variables
-project_web_urls = {}  # {user_id: {project_name: url}}
-project_env_vars = {}  # {user_id: {project_name: {"KEY": "value"}}}
-
-def get_public_url(port):
-    """Get public URL using serveo or localhost.run (free)"""
-    try:
-        # Try localhost.run first (no registration)
-        import socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(('', 0))
-        local_port = s.getsockname()[1]
-        s.close()
-        
-        # Start localtunnel alternative using serveo.net
-        process = subprocess.Popen(
-            f"ssh -o StrictHostKeyChecking=no -R 80:localhost:{port} serveo.net",
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        time.sleep(3)
-        return f"http://localhost:{port}"
-    except:
-        return f"http://localhost:{port}"
-
-def deploy_with_public_url(project_path, port=8000):
-    """Deploy project with public URL (simulated for free hosting)"""
-    # Create a simple HTTP server if no web framework
-    server_script = os.path.join(project_path, "server.py")
-    if not os.path.exists(server_script):
-        with open(server_script, 'w') as f:
-            f.write(f'''
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-import os
-
-os.chdir(os.path.dirname(__file__))
-port = {port}
-server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
-print(f"Server running on port {{port}}")
-server.serve_forever()
-''')
-    return f"http://localhost:{port}"
+# ============== GITHUB INTEGRATION (No git module required) ==============
 
 @bot.message_handler(func=lambda m: m.text == "🐙 GitHub Deploy")
 def github_deploy_menu(msg):
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
-        InlineKeyboardButton("📦 Deploy from URL", callback_data="github_url"),
-        InlineKeyboardButton("🔗 Deploy from Repo", callback_data="github_repo"),
+        InlineKeyboardButton("📦 Deploy from GitHub URL", callback_data="github_url"),
         InlineKeyboardButton("📋 My GitHub Projects", callback_data="github_my")
     )
     bot.send_message(msg.chat.id, "🐙 *GitHub Deployment*\n\nChoose deployment method:", 
                      parse_mode="Markdown", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("github_"))
-def handle_github(call):
+@bot.callback_query_handler(func=lambda call: call.data == "github_url")
+def handle_github_url(call):
+    bot.edit_message_text("🔗 *Enter GitHub Repository URL*\n\nExample: `https://github.com/username/repo`\n\nOr /cancel to cancel",
+                        call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    bot.register_next_step_handler(call.message, process_github_download)
+
+@bot.callback_query_handler(func=lambda call: call.data == "github_my")
+def show_github_projects(call):
     user_id = call.message.chat.id
-    
-    if call.data == "github_url":
-        bot.edit_message_text("🔗 *Enter GitHub Repository URL*\n\nExample: `https://github.com/username/repo`\n\nOr `/cancel` to cancel",
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        bot.register_next_step_handler(call.message, process_github_url)
-    
-    elif call.data == "github_repo":
-        bot.edit_message_text("📝 *Enter repository name*\n\nFormat: `username/repo`\nExample: `octocat/Hello-World`\n\nOr `/cancel` to cancel",
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        bot.register_next_step_handler(call.message, process_github_repo)
-    
-    elif call.data == "github_my":
-        show_user_github_projects(user_id, call.message)
-    
-    bot.answer_callback_query(call.id)
-
-def process_github_url(msg):
-    if msg.text == "/cancel":
-        bot.send_message(msg.chat.id, "❌ Cancelled.", reply_markup=get_main_keyboard(msg.chat.id))
-        return
-    
-    url = msg.text.strip()
-    if not url.startswith("http"):
-        url = "https://" + url
-    
-    bot.send_message(msg.chat.id, "⏳ *Cloning repository...*", parse_mode="Markdown")
-    clone_github_project(msg.chat.id, url)
-
-def process_github_repo(msg):
-    if msg.text == "/cancel":
-        bot.send_message(msg.chat.id, "❌ Cancelled.", reply_markup=get_main_keyboard(msg.chat.id))
-        return
-    
-    repo = msg.text.strip()
-    url = f"https://github.com/{repo}.git"
-    bot.send_message(msg.chat.id, f"⏳ *Cloning {repo}...*", parse_mode="Markdown")
-    clone_github_project(msg.chat.id, url)
-
-def clone_github_project(user_id, repo_url):
-    try:
-        # Extract repo name from URL
-        repo_name = repo_url.split('/')[-1].replace('.git', '')
-        project_name = f"github_{repo_name}_{int(time.time())}"
-        
-        user_dir = get_user_dir(user_id)
-        project_path = os.path.join(user_dir, project_name)
-        
-        # Clone repository
-        git.Repo.clone_from(repo_url, project_path)
-        
-        # Check for requirements.txt
-        req_file = os.path.join(project_path, "requirements.txt")
-        if os.path.exists(req_file):
-            subprocess.run(["pip", "install", "-r", req_file], cwd=project_path, capture_output=True)
-        
-        # Check for main.py
-        main_file = os.path.join(project_path, "main.py")
-        if not os.path.exists(main_file):
-            # Look for any .py file
-            py_files = [f for f in os.listdir(project_path) if f.endswith('.py')]
-            if py_files:
-                # Rename the first py file to main.py
-                shutil.move(os.path.join(project_path, py_files[0]), main_file)
-        
-        # Get folder size
-        size = get_folder_size(project_path)
-        
-        markup = InlineKeyboardMarkup()
-        markup.add(
-            InlineKeyboardButton("▶️ Start Now", callback_data=f"start_{project_name}"),
-            InlineKeyboardButton("🌐 Get Public URL", callback_data=f"weburl_{project_name}")
-        )
-        
-        bot.send_message(user_id, f"✅ *GitHub Project Deployed!*\n\n"
-                         f"📁 Name: `{project_name}`\n"
-                         f"📦 Size: {size}\n"
-                         f"🐙 Repo: {repo_url}\n\n"
-                         f"Click below to start:",
-                         parse_mode="Markdown", reply_markup=markup)
-        
-    except Exception as e:
-        bot.send_message(user_id, f"❌ *GitHub Clone Failed*\n\nError: `{str(e)[:200]}`", 
-                         parse_mode="Markdown")
-
-def show_user_github_projects(user_id, message):
     user_dir = get_user_dir(user_id)
     github_projects = []
     
@@ -236,7 +112,7 @@ def show_user_github_projects(user_id, message):
     
     if not github_projects:
         bot.edit_message_text("📭 *No GitHub projects found*\n\nUse '🐙 GitHub Deploy' to add one.",
-                            message.chat.id, message.message_id, parse_mode="Markdown")
+                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         return
     
     text = "🐙 *YOUR GITHUB PROJECTS*\n━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -245,7 +121,101 @@ def show_user_github_projects(user_id, message):
         status = "🟢 Running" if is_running else "⚪ Stopped"
         text += f"\n📁 `{proj}`\n└─ Status: {status}\n"
     
-    bot.edit_message_text(text, message.chat.id, message.message_id, parse_mode="Markdown")
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
+def process_github_download(msg):
+    if msg.text == "/cancel":
+        bot.send_message(msg.chat.id, "❌ Cancelled.", reply_markup=get_main_keyboard(msg.chat.id))
+        return
+    
+    url = msg.text.strip()
+    
+    # Extract username and repo name
+    if "github.com" in url:
+        parts = url.replace("https://", "").replace("http://", "").replace("github.com/", "").split('/')
+        if len(parts) >= 2:
+            username = parts[0]
+            repo = parts[1].replace(".git", "")
+            download_url = f"https://github.com/{username}/{repo}/archive/refs/heads/main.zip"
+            
+            status_msg = bot.send_message(msg.chat.id, f"⏳ *Downloading {repo} from GitHub...*", parse_mode="Markdown")
+            
+            try:
+                # Download the zip file
+                response = requests.get(download_url)
+                
+                if response.status_code == 404:
+                    # Try master branch instead
+                    download_url = f"https://github.com/{username}/{repo}/archive/refs/heads/master.zip"
+                    response = requests.get(download_url)
+                
+                if response.status_code == 200:
+                    # Save and extract
+                    user_id = msg.chat.id
+                    project_name = f"github_{repo}_{int(time.time())}"
+                    user_dir = get_user_dir(user_id)
+                    zip_path = os.path.join(user_dir, f"{project_name}.zip")
+                    
+                    with open(zip_path, 'wb') as f:
+                        f.write(response.content)
+                    
+                    # Extract
+                    extract_path = os.path.join(user_dir, project_name)
+                    os.makedirs(extract_path, exist_ok=True)
+                    
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(extract_path)
+                    
+                    # Handle nested folder structure
+                    extracted_items = os.listdir(extract_path)
+                    if len(extracted_items) == 1 and os.path.isdir(os.path.join(extract_path, extracted_items[0])):
+                        subfolder = os.path.join(extract_path, extracted_items[0])
+                        for item in os.listdir(subfolder):
+                            shutil.move(os.path.join(subfolder, item), extract_path)
+                        os.rmdir(subfolder)
+                    
+                    os.remove(zip_path)
+                    
+                    bot.edit_message_text("📦 *Extracted!*", msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+                    
+                    # Install requirements
+                    req_file = os.path.join(extract_path, "requirements.txt")
+                    if os.path.exists(req_file):
+                        subprocess.run(["pip", "install", "-r", req_file], cwd=extract_path, capture_output=True)
+                        bot.edit_message_text("📥 *Requirements Installed*", msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+                    
+                    size = get_folder_size(extract_path)
+                    
+                    # Check for main.py
+                    main_file = os.path.join(extract_path, "main.py")
+                    if not os.path.exists(main_file):
+                        # Look for any .py file
+                        py_files = [f for f in os.listdir(extract_path) if f.endswith('.py')]
+                        if py_files:
+                            shutil.move(os.path.join(extract_path, py_files[0]), main_file)
+                    
+                    markup = InlineKeyboardMarkup()
+                    markup.add(
+                        InlineKeyboardButton("▶️ Start Now", callback_data=f"start_{project_name}"),
+                        InlineKeyboardButton("⚙️ Set Env Vars", callback_data=f"env_{project_name}")
+                    )
+                    
+                    bot.edit_message_text(f"✅ *GitHub Project Deployed!*\n\n"
+                                     f"📁 Name: `{project_name}`\n"
+                                     f"📦 Size: {size}\n"
+                                     f"📄 main.py: {'✅' if os.path.exists(main_file) else '❌'}\n"
+                                     f"🐙 Repo: {url}\n\n"
+                                     f"Click below to start:",
+                                     msg.chat.id, status_msg.message_id, parse_mode="Markdown", reply_markup=markup)
+                else:
+                    bot.edit_message_text(f"❌ *Failed to download repository*\nStatus: {response.status_code}\nMake sure the repository exists and is public.", 
+                                        msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+            except Exception as e:
+                bot.edit_message_text(f"❌ *Error:* `{str(e)[:200]}`", msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+        else:
+            bot.send_message(msg.chat.id, "❌ *Invalid GitHub URL*", parse_mode="Markdown")
+    else:
+        bot.send_message(msg.chat.id, "❌ *Please provide a valid GitHub URL*", parse_mode="Markdown")
 
 # ============== ENVIRONMENT VARIABLES ==============
 
@@ -304,7 +274,7 @@ def handle_env_vars(call):
 def env_add_var(call):
     project_name = call.data.replace("env_add_", "")
     bot.edit_message_text(f"📝 *Add Environment Variable for `{project_name}`*\n\n"
-                         f"Send in format: `KEY=value`\n\nExample: `PORT=8080`\n\nType /cancel to cancel",
+                         f"Send in format: `KEY=value`\n\nExample: `PORT=8080`\n`DATABASE_URL=postgresql://localhost/db`\n\nType /cancel to cancel",
                          call.message.chat.id, call.message.message_id, parse_mode="Markdown")
     bot.register_next_step_handler(call.message, process_env_add, project_name)
 
@@ -335,7 +305,7 @@ def process_env_add(msg, project_name):
             for k, v in project_env_vars[user_id][project_name].items():
                 f.write(f"{k}={v}\n")
         
-        bot.send_message(msg.chat.id, f"✅ *Variable added:* `{key}={value[:20]}`",
+        bot.send_message(msg.chat.id, f"✅ *Variable added:* `{key}={value[:30]}`",
                         parse_mode="Markdown")
         
         # Restart project if running to apply new env vars
@@ -432,116 +402,6 @@ def env_list_vars(call):
 def env_back(call):
     env_vars_menu(call.message)
 
-# ============== WEB URL FEATURE ==============
-
-@bot.message_handler(func=lambda m: m.text == "🌐 Web URL")
-def web_url_menu(msg):
-    user_id = msg.chat.id
-    projects = get_user_projects(user_id)
-    user_running = get_user_running_projects(user_id)
-    
-    if not projects:
-        bot.send_message(msg.chat.id, "📂 *No projects found*", parse_mode="Markdown")
-        return
-    
-    markup = InlineKeyboardMarkup(row_width=2)
-    for project in projects:
-        is_running = project in user_running
-        if is_running:
-            markup.add(InlineKeyboardButton(f"🌐 {project} (Running)", callback_data=f"weburl_{project}"))
-        else:
-            markup.add(InlineKeyboardButton(f"⚪ {project} (Stopped)", callback_data=f"weburl_start_{project}"))
-    
-    bot.send_message(msg.chat.id, "🌐 *Get Public URL for Project*\n\n"
-                     "Select a project (Running projects can get URL instantly):",
-                     parse_mode="Markdown", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("weburl_"))
-def handle_web_url(call):
-    user_id = call.message.chat.id
-    project_name = call.data.replace("weburl_", "")
-    
-    if call.data.startswith("weburl_start_"):
-        project_name = project_name.replace("start_", "")
-        # Start project first
-        result = start_project(user_id, project_name)
-        if not result:
-            bot.answer_callback_query(call.id, "Failed to start project")
-            bot.edit_message_text(f"❌ *Cannot start '{project_name}'*\nCheck if main.py exists",
-                                call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-            return
-        time.sleep(2)
-    
-    # Get project info
-    user_running = get_user_running_projects(user_id)
-    
-    if project_name not in user_running:
-        bot.edit_message_text(f"⚠️ *'{project_name}' is not running*\nStart it first using ▶️ Start",
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        return
-    
-    # Simulate getting public URL (in real scenario, you'd use ngrok/serveo)
-    project_path = os.path.join(get_user_dir(user_id), project_name)
-    
-    # Check if it's a web framework project
-    has_web = any(f in os.listdir(project_path) for f in ['app.py', 'web.py', 'server.py', 'flask_app.py'])
-    
-    if has_web:
-        url_text = f"🌐 *Public URL for `{project_name}`*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        url_text += f"🔗 *Local Access:* `http://localhost:8000`\n\n"
-        url_text += f"💡 *To get a public URL:*\n"
-        url_text += f"• Use ngrok: `ngrok http 8000`\n"
-        url_text += f"• Use serveo: `ssh -R 80:localhost:8000 serveo.net`\n\n"
-        url_text += f"📝 *Note:* Your project is running locally on port 8000"
-    else:
-        url_text = f"🌐 *Project `{project_name}`*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        url_text += f"📁 This is a Python script (not a web app)\n"
-        url_text += f"💡 It runs as a background process\n\n"
-        url_text += f"🔧 *To make it a web app:*\n"
-        url_text += f"• Use Flask/Django/FastAPI\n"
-        url_text += f"• Include `app.run(host='0.0.0.0', port=8000)`"
-    
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔄 Refresh", callback_data=f"weburl_{project_name}"))
-    
-    bot.edit_message_text(url_text, call.message.chat.id, call.message.message_id,
-                         parse_mode="Markdown", reply_markup=markup)
-    bot.answer_callback_query(call.id)
-
-# ============== ADMIN PORT MONITORING ==============
-
-@bot.callback_query_handler(func=lambda call: call.data == "admin_ports")
-def admin_ports(call):
-    if call.message.chat.id != ADMIN_ID:
-        bot.answer_callback_query(call.id, "Admin only!")
-        return
-    
-    text = "🌐 *PUBLIC PORT MAPPINGS*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    has_ports = False
-    
-    for user_id, projects in running_projects.items():
-        if projects:
-            has_ports = True
-            text += f"👤 User `{user_id}`:\n"
-            for project in projects.keys():
-                text += f"  ├─ 📁 {project}\n"
-                text += f"  └─ 🌐 Local: localhost:8000\n"
-            text += "\n"
-    
-    if not has_ports:
-        text += "📭 *No active project ports*"
-    
-    text += "\n💡 *To expose projects:*\n"
-    text += "• Use '🌐 Web URL' feature\n"
-    text += "• Or manually with ngrok/serveo"
-    
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-    
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id,
-                         parse_mode="Markdown", reply_markup=markup)
-    bot.answer_callback_query(call.id)
-
 # ============== START COMMAND ==============
 
 @bot.message_handler(commands=['start'])
@@ -560,7 +420,6 @@ def start(msg):
 ✅ Upload & Deploy Python Projects
 ✅ **NEW: GitHub Repository Deploy**
 ✅ **NEW: Environment Variables**
-✅ **NEW: Web URL Exposure**
 ✅ Auto-Install Requirements
 ✅ 24/7 Project Hosting
 
@@ -630,15 +489,13 @@ def admin_panel(msg):
 • Broadcast messages to all users
 • Clean orphaned processes
 • View server statistics
-• Monitor public ports
 
-💻 *Powered by @Hexh4ckerOFC"
+💻 *Powered by @Hexh4ckerOFC*
     """
     
     bot.send_message(msg.chat.id, admin_text, parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
-# ============== ADMIN CALLBACK HANDLERS (keep existing) ==============
-# ... (keep all existing admin callback handlers)
+# ============== ADMIN CALLBACK HANDLERS ==============
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_"))
 def handle_admin_callbacks(call):
@@ -811,9 +668,6 @@ def handle_admin_callbacks(call):
                             call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         bot.register_next_step_handler(call.message, process_broadcast)
     
-    elif action == "ports":
-        admin_ports(call)
-    
     elif action == "back":
         admin_panel(call.message)
     
@@ -836,10 +690,7 @@ def process_broadcast(msg):
     
     bot.send_message(msg.chat.id, "👑 Admin Panel", reply_markup=get_admin_keyboard())
 
-# ============== USER COMMANDS (keep existing) ==============
-# ... (keep all existing user command handlers from upload_btn to help_command)
-
-# Adding missing handlers for buttons
+# ============== USER COMMANDS ==============
 
 @bot.message_handler(func=lambda m: m.text == "📦 Upload" or m.text == "📦 Upload Project")
 def upload_btn(msg):
@@ -1051,9 +902,11 @@ def help_command(msg):
 🗑️ Delete - Delete specific project
 🗑️ Delete All - Delete ALL your projects
 
-🌐 *WEB FEATURES*
-🌐 Web URL - Get public URL for web projects
-⚙️ Env Vars - Set environment variables
+⚙️ *ENVIRONMENT VARIABLES*
+⚙️ Env Vars - Set environment variables for projects
+• KEY=value format
+• Saved to .env file
+• Auto-applied on restart
 
 📊 *MONITORING*
 📊 Stats - Your storage & project counts
@@ -1067,14 +920,9 @@ def help_command(msg):
 
 💡 *GITHUB DEPLOYMENT*
 • Supports public repositories
+• Downloads as ZIP (no git required)
 • Auto-installs requirements.txt
 • Auto-detects main.py
-• Clones entire repository
-
-💡 *ENVIRONMENT VARIABLES*
-• Set KEY=value pairs
-• Saved to .env file
-• Auto-applied on project restart
 
 🆘 *SUPPORT*
 Contact: @Hexh4ckerOFC
@@ -1161,28 +1009,6 @@ def handle_callbacks(call):
     elif call.data == "cancel_delete":
         bot.edit_message_text("❌ *Action cancelled*", 
                             call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-    
-    # Handle web URL for stopped projects
-    elif call.data.startswith("weburl_start_"):
-        project_name = call.data.replace("weburl_start_", "")
-        result = start_project(user_id, project_name)
-        if result:
-            time.sleep(2)
-            # Now get web URL
-            handle_web_url(call)
-        else:
-            bot.edit_message_text(f"❌ *Cannot start '{project_name}'*\nCheck if main.py exists",
-                                call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-    
-    # Handle environment variable callbacks (already handled above)
-    elif call.data.startswith("env_"):
-        # These are handled in the env_vars section
-        pass
-    
-    # Handle GitHub callbacks (already handled above)
-    elif call.data.startswith("github_"):
-        # These are handled in the github section
-        pass
     
     bot.answer_callback_query(call.id)
 
@@ -1522,9 +1348,8 @@ print(f"📁 Base Directory: {BASE_DIR}")
 print(f"👥 Multi-User Support: ENABLED")
 print(f"🔒 Private Workspaces: YES")
 print(f"👑 Admin ID: {ADMIN_ID}")
-print(f"🐙 GitHub Integration: ENABLED")
+print(f"🐙 GitHub Integration: ENABLED (No git module required)")
 print(f"⚙️ Environment Variables: ENABLED")
-print(f"🌐 Web URL Support: ENABLED")
 print(f"💬 Support: @Hexh4ckerOFC")
 print("="*50)
 
