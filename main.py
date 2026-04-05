@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import json
-import tempfile
 import re
 
 BOT_TOKEN = "8389147569:AAGF2RxBRe8AiaW0_wN4rooJ5WF06zYtMho"
@@ -28,10 +27,10 @@ os.makedirs(BASE_DIR, exist_ok=True)
 running_projects = {}
 project_errors = {}
 
-# Monthly user tracking
+# Monthly user tracking with leaderboard
 monthly_stats = {
     "current_month": datetime.now().strftime("%Y-%m"),
-    "users": {},  # {user_id: {"first_seen": date, "last_active": date, "commands_used": 0, "projects_deployed": 0}}
+    "users": {},  # {user_id: {"first_seen": date, "last_active": date, "commands_used": 0, "projects_deployed": 0, "username": ""}}
     "total_commands": 0,
     "total_projects_deployed": 0
 }
@@ -49,42 +48,67 @@ def load_monthly_stats():
                 if loaded.get("current_month") == current_month:
                     monthly_stats.update(loaded)
                 else:
-                    # New month, reset stats
+                    # New month, reset stats but keep previous month data
+                    old_month = loaded.get("current_month")
+                    if old_month:
+                        # Save previous month to archive
+                        archive_file = f"monthly_stats_{old_month}.json"
+                        with open(archive_file, 'w') as af:
+                            json.dump(loaded, af, indent=2)
+                    
                     monthly_stats = {
                         "current_month": current_month,
                         "users": {},
                         "total_commands": 0,
                         "total_projects_deployed": 0
                     }
-        except:
-            pass
+        except Exception as e:
+            print(f"Error loading stats: {e}")
 
 def save_monthly_stats():
     try:
         with open(STATS_FILE, 'w') as f:
             json.dump(monthly_stats, f, indent=2)
-    except:
-        pass
+    except Exception as e:
+        print(f"Error saving stats: {e}")
 
-def update_user_stats(user_id, command_used=True, project_deployed=False):
+def update_user_stats(user_id, command_used=True, project_deployed=False, username=None):
     """Update user statistics for monthly tracking"""
     current_month = datetime.now().strftime("%Y-%m")
     
     if monthly_stats["current_month"] != current_month:
         # Reset for new month
+        old_month = monthly_stats["current_month"]
+        if old_month and monthly_stats["users"]:
+            archive_file = f"monthly_stats_{old_month}.json"
+            with open(archive_file, 'w') as af:
+                json.dump(monthly_stats, af, indent=2)
+        
         monthly_stats["current_month"] = current_month
         monthly_stats["users"] = {}
         monthly_stats["total_commands"] = 0
         monthly_stats["total_projects_deployed"] = 0
     
     user_id_str = str(user_id)
+    
+    # Get username if not provided
+    if not username:
+        try:
+            user = bot.get_chat(user_id)
+            username = user.username or user.first_name or str(user_id)
+        except:
+            username = str(user_id)
+    
     if user_id_str not in monthly_stats["users"]:
         monthly_stats["users"][user_id_str] = {
             "first_seen": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "last_active": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "commands_used": 0,
-            "projects_deployed": 0
+            "projects_deployed": 0,
+            "username": username[:30]
         }
+    else:
+        monthly_stats["users"][user_id_str]["username"] = username[:30]
     
     if command_used:
         monthly_stats["users"][user_id_str]["commands_used"] += 1
@@ -97,12 +121,66 @@ def update_user_stats(user_id, command_used=True, project_deployed=False):
     monthly_stats["users"][user_id_str]["last_active"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_monthly_stats()
 
-# Auto-delete message handler
-def send_auto_delete(chat_id, text, delay=30, reply_markup=None, parse_mode=None):
-    """Send message that auto-deletes after delay seconds"""
+def get_top_users(limit=10, sort_by="commands"):
+    """Get top users leaderboard"""
+    users_list = []
+    for user_id, stats in monthly_stats["users"].items():
+        users_list.append({
+            "user_id": user_id,
+            "username": stats.get("username", user_id[:8]),
+            "commands": stats.get("commands_used", 0),
+            "projects": stats.get("projects_deployed", 0),
+            "last_active": stats.get("last_active", "")
+        })
+    
+    if sort_by == "commands":
+        users_list.sort(key=lambda x: x["commands"], reverse=True)
+    elif sort_by == "projects":
+        users_list.sort(key=lambda x: x["projects"], reverse=True)
+    
+    return users_list[:limit]
+
+# Auto-delete message handler for ALL messages
+class AutoDeleteBot(telebot.TeleBot):
+    def send_message(self, chat_id, text, *args, **kwargs):
+        # Default delay for all messages
+        if 'reply_markup' not in kwargs or kwargs.get('reply_markup') is None:
+            # For regular messages without buttons, delete after 30 seconds
+            msg = super().send_message(chat_id, text, *args, **kwargs)
+            
+            def delete_later():
+                time.sleep(30)
+                try:
+                    super().delete_message(chat_id, msg.message_id)
+                except:
+                    pass
+            
+            threading.Thread(target=delete_later, daemon=True).start()
+            return msg
+        else:
+            # For messages with buttons, delete after 60 seconds (give time to interact)
+            msg = super().send_message(chat_id, text, *args, **kwargs)
+            
+            def delete_later():
+                time.sleep(60)
+                try:
+                    super().delete_message(chat_id, msg.message_id)
+                except:
+                    pass
+            
+            threading.Thread(target=delete_later, daemon=True).start()
+            return msg
+
+# Replace bot with auto-delete version
+original_bot = bot
+bot = AutoDeleteBot(BOT_TOKEN)
+
+def safe_send_message(chat_id, text, delay=30, reply_markup=None, parse_mode=None):
+    """Safely send message with auto-delete"""
     try:
         msg = bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
         
+        # Auto-delete after delay
         def delete_later():
             time.sleep(delay)
             try:
@@ -113,55 +191,18 @@ def send_auto_delete(chat_id, text, delay=30, reply_markup=None, parse_mode=None
         threading.Thread(target=delete_later, daemon=True).start()
         return msg
     except Exception as e:
-        print(f"Auto-delete error: {e}")
-        return None
-
-def edit_auto_delete(chat_id, message_id, new_text, delay=30, reply_markup=None):
-    """Edit message and auto-delete after delay"""
-    try:
-        msg = bot.edit_message_text(new_text, chat_id, message_id, reply_markup=reply_markup)
+        plain_text = re.sub(r'[*_`~]', '', text)
+        msg = bot.send_message(chat_id, plain_text, reply_markup=reply_markup)
         
         def delete_later():
             time.sleep(delay)
             try:
-                bot.delete_message(chat_id, message_id)
+                bot.delete_message(chat_id, msg.message_id)
             except:
                 pass
         
         threading.Thread(target=delete_later, daemon=True).start()
         return msg
-    except Exception as e:
-        print(f"Edit auto-delete error: {e}")
-        return None
-
-# Admin statistics
-admin_stats = {
-    "total_users": 0,
-    "total_projects": 0,
-    "total_running": 0,
-    "bot_start_time": datetime.now()
-}
-
-# Store environment variables
-project_env_vars = {}
-
-def escape_markdown(text):
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return ''.join(f'\\{char}' if char in escape_chars else char for char in str(text))
-
-def safe_send_message(chat_id, text, delay=None, reply_markup=None, parse_mode=None):
-    """Safely send message with optional auto-delete"""
-    try:
-        if delay:
-            return send_auto_delete(chat_id, text, delay, reply_markup, parse_mode)
-        else:
-            return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
-    except Exception as e:
-        plain_text = re.sub(r'[*_`~]', '', text)
-        if delay:
-            return send_auto_delete(chat_id, plain_text, delay, reply_markup)
-        else:
-            return bot.send_message(chat_id, plain_text, reply_markup=reply_markup)
 
 # ============== SIMPLE UI ==============
 
@@ -175,7 +216,7 @@ def get_main_keyboard(user_id):
             "📁 My Projects", "▶️ Start", "⏹️ Stop",
             "🔄 Restart", "🗑️ Delete", "🗑️ Delete All",
             "📊 Stats", "🔄 Refresh", "📝 Errors",
-            "⚙️ Env Vars", "📅 Monthly Stats", "👑 Admin Panel", "❓ Help"
+            "⚙️ Env Vars", "🏆 Top Users", "👑 Admin Panel", "❓ Help"
         ]
         markup.add(*buttons)
         return markup
@@ -185,7 +226,7 @@ def get_main_keyboard(user_id):
             "📦 Upload", "🐙 GitHub Deploy", "📁 Projects",
             "▶️ Start", "⏹️ Stop", "🔄 Restart", "🗑️ Delete",
             "🗑️ Delete All", "📊 Stats", "🔄 Refresh",
-            "📝 Errors", "⚙️ Env Vars", "📅 Monthly Stats", "❓ Help"
+            "📝 Errors", "⚙️ Env Vars", "🏆 Top Users", "❓ Help"
         ]
         markup.add(*buttons)
         return markup
@@ -199,40 +240,101 @@ def get_admin_keyboard():
         InlineKeyboardButton("⚠️ Error Logs", callback_data="admin_errors"),
         InlineKeyboardButton("💾 Server Stats", callback_data="admin_server"),
         InlineKeyboardButton("📊 Bot Stats", callback_data="admin_botstats"),
-        InlineKeyboardButton("📅 Monthly Stats", callback_data="admin_monthly"),
+        InlineKeyboardButton("🏆 Top Users", callback_data="admin_top_users"),
         InlineKeyboardButton("🗑️ Clean Orphaned", callback_data="admin_clean"),
         InlineKeyboardButton("🔄 Broadcast", callback_data="admin_broadcast"),
         InlineKeyboardButton("❌ Close", callback_data="admin_close")
     )
     return markup
 
+# ============== TOP USERS LEADERBOARD ==============
+
+@bot.message_handler(func=lambda m: m.text == "🏆 Top Users")
+def top_users_command(msg):
+    user_id = msg.chat.id
+    update_user_stats(user_id, command_used=True)
+    
+    # Get top users by commands
+    top_by_commands = get_top_users(10, "commands")
+    top_by_projects = get_top_users(10, "projects")
+    
+    current_month = datetime.now().strftime("%B %Y")
+    
+    # Build leaderboard text
+    leaderboard_text = f"🏆 *TOP USERS - {current_month}*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    leaderboard_text += "📊 *Most Active (Commands)*\n"
+    if top_by_commands:
+        for i, user in enumerate(top_by_commands, 1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            leaderboard_text += f"{medal} `{user['username'][:15]}` - {user['commands']} commands\n"
+    else:
+        leaderboard_text += "No data yet\n"
+    
+    leaderboard_text += "\n🚀 *Top Deployers (Projects)*\n"
+    if top_by_projects:
+        for i, user in enumerate(top_by_projects, 1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            leaderboard_text += f"{medal} `{user['username'][:15]}` - {user['projects']} projects\n"
+    else:
+        leaderboard_text += "No data yet\n"
+    
+    # Add your rank
+    user_id_str = str(user_id)
+    user_stats = monthly_stats["users"].get(user_id_str, {})
+    user_commands = user_stats.get("commands_used", 0)
+    user_projects = user_stats.get("projects_deployed", 0)
+    
+    # Calculate rank
+    all_users_by_cmd = list(monthly_stats["users"].items())
+    all_users_by_cmd.sort(key=lambda x: x[1].get("commands_used", 0), reverse=True)
+    
+    rank = 1
+    for i, (uid, stats) in enumerate(all_users_by_cmd, 1):
+        if uid == user_id_str:
+            rank = i
+            break
+    
+    total_users = len(monthly_stats["users"])
+    
+    leaderboard_text += f"\n👤 *Your Stats*\n"
+    leaderboard_text += f"├─ Rank: #{rank} / {total_users}\n"
+    leaderboard_text += f"├─ Commands: {user_commands}\n"
+    leaderboard_text += f"└─ Projects: {user_projects}\n"
+    
+    leaderboard_text += f"\n📅 *Global Stats*\n"
+    leaderboard_text += f"├─ Total Users: {total_users}\n"
+    leaderboard_text += f"├─ Total Commands: {monthly_stats['total_commands']}\n"
+    leaderboard_text += f"└─ Total Projects: {monthly_stats['total_projects_deployed']}\n"
+    
+    leaderboard_text += f"\n💡 *Stats reset on the 1st of each month*\n"
+    leaderboard_text += f"💻 *Powered by @Hexh4ckerOFC*"
+    
+    safe_send_message(msg.chat.id, leaderboard_text, parse_mode="Markdown", delay=60)
+
 # ============== ENHANCED GITHUB INTEGRATION ==============
 
 def find_entry_point(project_path):
-    """Find the main entry point file (not just main.py)"""
-    # Priority order for entry points
+    """Find the main entry point file"""
     entry_points = [
         "main.py", "app.py", "bot.py", "run.py", "server.py",
         "application.py", "wsgi.py", "manage.py", "index.py",
         "start.py", "backend.py", "api.py", "web.py"
     ]
     
-    # Check for common entry points first
     for entry in entry_points:
         entry_path = os.path.join(project_path, entry)
         if os.path.exists(entry_path):
             return entry_path, entry
     
-    # Look for any .py file that might be the main file
     py_files = []
     for file in os.listdir(project_path):
         if file.endswith('.py') and file not in ['setup.py', 'requirements.py', '__init__.py', 'test_']:
             file_path = os.path.join(project_path, file)
-            if os.path.getsize(file_path) > 100:  # Not empty
+            if os.path.getsize(file_path) > 100:
                 py_files.append(file)
     
     if py_files:
-        # Sort by likely importance (if contains main or app)
         py_files.sort(key=lambda x: (
             0 if 'main' in x.lower() else 
             1 if 'app' in x.lower() else 
@@ -243,7 +345,7 @@ def find_entry_point(project_path):
     return None, None
 
 def get_project_type(project_path):
-    """Detect project type based on files"""
+    """Detect project type"""
     files = os.listdir(project_path)
     
     if 'requirements.txt' in files:
@@ -262,9 +364,6 @@ def get_project_type(project_path):
     
     if 'package.json' in files:
         return 'Node.js', 'npm start'
-    
-    if 'docker-compose.yml' in files or 'Dockerfile' in files:
-        return 'Docker', 'docker-compose up'
     
     return 'Python Script', 'python {entry_point}'
 
@@ -356,27 +455,23 @@ def process_github_download(msg):
                     
                     bot.edit_message_text("📦 Extracted!", msg.chat.id, status_msg.message_id)
                     
-                    # Auto-detect entry point
                     entry_path, entry_file = find_entry_point(extract_path)
                     
                     if not entry_path:
-                        bot.edit_message_text(f"⚠️ No Python entry file found! Please ensure your project has a main.py, app.py, or similar.",
+                        bot.edit_message_text(f"⚠️ No Python entry file found!",
                                             msg.chat.id, status_msg.message_id)
                         return
                     
-                    # Rename to main.py for consistency
                     main_path = os.path.join(extract_path, "main.py")
                     if entry_path != main_path:
                         shutil.move(entry_path, main_path)
                         bot.edit_message_text(f"📝 Detected entry point: {entry_file} → renamed to main.py",
                                             msg.chat.id, status_msg.message_id)
                     
-                    # Detect project type
-                    project_type, run_command = get_project_type(extract_path)
+                    project_type, _ = get_project_type(extract_path)
                     bot.edit_message_text(f"🔍 Detected project type: {project_type}",
                                         msg.chat.id, status_msg.message_id)
                     
-                    # Install requirements
                     req_file = os.path.join(extract_path, "requirements.txt")
                     if os.path.exists(req_file):
                         bot.edit_message_text("📥 Installing requirements...", msg.chat.id, status_msg.message_id)
@@ -385,7 +480,6 @@ def process_github_download(msg):
                     
                     size = get_folder_size(extract_path)
                     
-                    # Update stats
                     update_user_stats(user_id, project_deployed=True)
                     
                     markup = InlineKeyboardMarkup()
@@ -412,59 +506,6 @@ def process_github_download(msg):
             safe_send_message(msg.chat.id, "❌ Invalid GitHub URL", delay=30)
     else:
         safe_send_message(msg.chat.id, "❌ Please provide a valid GitHub URL", delay=30)
-
-# ============== MONTHLY STATS COMMAND ==============
-
-@bot.message_handler(func=lambda m: m.text == "📅 Monthly Stats")
-def monthly_stats_command(msg):
-    user_id = msg.chat.id
-    update_user_stats(user_id, command_used=True)
-    
-    current_month = datetime.now().strftime("%B %Y")
-    
-    # Get user's monthly stats
-    user_id_str = str(user_id)
-    user_stats = monthly_stats["users"].get(user_id_str, {})
-    
-    user_commands = user_stats.get("commands_used", 0)
-    user_projects = user_stats.get("projects_deployed", 0)
-    first_seen = user_stats.get("first_seen", "This month")
-    last_active = user_stats.get("last_active", "Today")
-    
-    # Calculate rank among users
-    all_users = list(monthly_stats["users"].items())
-    all_users.sort(key=lambda x: x[1].get("commands_used", 0), reverse=True)
-    
-    rank = 1
-    for i, (uid, stats) in enumerate(all_users, 1):
-        if uid == user_id_str:
-            rank = i
-            break
-    
-    total_users = len(monthly_stats["users"])
-    
-    stats_text = f"""
-📅 *MONTHLY STATISTICS - {current_month}*
-━━━━━━━━━━━━━━━━━━━━━━
-
-👤 *YOUR STATS*
-├─ Commands Used: {user_commands}
-├─ Projects Deployed: {user_projects}
-├─ First Seen: {first_seen[:10] if first_seen != 'This month' else first_seen}
-├─ Last Active: {last_active[:10] if last_active != 'Today' else last_active}
-└─ Rank: #{rank} / {total_users} users
-
-📊 *GLOBAL STATS*
-├─ Total Users: {total_users}
-├─ Total Commands: {monthly_stats['total_commands']}
-└─ Total Projects: {monthly_stats['total_projects_deployed']}
-
-💡 *Stats reset every month on the 1st*
-
-💻 *Powered by @Hexh4ckerOFC*
-    """
-    
-    safe_send_message(msg.chat.id, stats_text, parse_mode="Markdown")
 
 # ============== ENVIRONMENT VARIABLES ==============
 
@@ -649,14 +690,35 @@ def env_list_vars(call):
 def env_back(call):
     env_vars_menu(call.message)
 
+# Store environment variables
+project_env_vars = {}
+
+# Admin statistics
+admin_stats = {
+    "total_users": 0,
+    "total_projects": 0,
+    "total_running": 0,
+    "bot_start_time": datetime.now()
+}
+
 # ============== START COMMAND ==============
 
 @bot.message_handler(commands=['start'])
 def start(msg):
     user_id = msg.chat.id
-    update_user_stats(user_id, command_used=True)
+    username = msg.from_user.username or msg.from_user.first_name
+    update_user_stats(user_id, command_used=True, username=username)
     is_admin = (user_id == ADMIN_ID)
     total_projects = len(get_user_projects(user_id))
+    
+    # Get user rank
+    all_users = list(monthly_stats["users"].items())
+    all_users.sort(key=lambda x: x[1].get("commands_used", 0), reverse=True)
+    rank = 1
+    for i, (uid, stats) in enumerate(all_users, 1):
+        if uid == str(user_id):
+            rank = i
+            break
     
     welcome_text = f"""
 🔥 WELCOME TO PYTHON HOSTING
@@ -665,10 +727,9 @@ def start(msg):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ User-Specific Workspaces
 ✅ GitHub Repository Deploy
-✅ Auto-Detect Entry Points (main.py, app.py, bot.py, etc.)
-✅ Auto-Detect Project Type
+✅ Auto-Detect Entry Points
 ✅ Environment Variables Support
-✅ Monthly Statistics Tracking
+✅ Monthly Statistics & Leaderboard
 ✅ Auto-Delete Messages (30 sec)
 ✅ 24/7 Project Hosting
 
@@ -676,7 +737,10 @@ def start(msg):
 ├─ User ID: {user_id}
 ├─ Projects: {total_projects}
 ├─ Running: {len(get_user_running_projects(user_id))}
+├─ Monthly Rank: #{rank}
 └─ Role: {'👑 ADMIN' if is_admin else '👤 USER'}
+
+🏆 *Check your monthly ranking with '🏆 Top Users'*
 
 💡 Need Help? @Hexh4ckerOFC
 
@@ -898,37 +962,29 @@ def handle_admin_callbacks(call):
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
         bot.edit_message_text(stats_text, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
-    elif action == "monthly":
+    elif action == "top_users":
+        top_by_commands = get_top_users(15, "commands")
+        
         current_month = datetime.now().strftime("%B %Y")
+        text = f"🏆 TOP USERS LEADERBOARD - {current_month}\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        # Get top users
-        all_users = list(monthly_stats["users"].items())
-        all_users.sort(key=lambda x: x[1].get("commands_used", 0), reverse=True)
+        if top_by_commands:
+            for i, user in enumerate(top_by_commands, 1):
+                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                text += f"{medal} `{user['username'][:20]}`\n"
+                text += f"    ├─ Commands: {user['commands']}\n"
+                text += f"    └─ Projects: {user['projects']}\n\n"
+        else:
+            text += "No data available yet\n"
         
-        top_users_text = ""
-        for i, (uid, stats) in enumerate(all_users[:10], 1):
-            top_users_text += f"{i}. User {uid[:8]}... - {stats.get('commands_used', 0)} commands\n"
-        
-        monthly_text = f"""
-📅 MONTHLY STATISTICS - {current_month}
-━━━━━━━━━━━━━━━━━━━━━━
-
-📊 GLOBAL STATS
-├─ Total Users: {len(monthly_stats['users'])}
-├─ Total Commands: {monthly_stats['total_commands']}
-└─ Total Projects: {monthly_stats['total_projects_deployed']}
-
-🏆 TOP 10 USERS
-{top_users_text if top_users_text else 'No data yet'}
-
-💡 Stats reset on the 1st of each month
-
-💻 Powered by @Hexh4ckerOFC
-        """
+        text += f"📊 Total Users: {len(monthly_stats['users'])}\n"
+        text += f"📊 Total Commands: {monthly_stats['total_commands']}\n"
+        text += f"📊 Total Projects: {monthly_stats['total_projects_deployed']}\n"
+        text += f"\n💻 Powered by @Hexh4ckerOFC"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-        bot.edit_message_text(monthly_text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
     elif action == "clean":
         cleaned = clean_orphaned_processes()
@@ -1189,11 +1245,11 @@ def help_command(msg):
 • Saved to .env file
 • Auto-applied on restart
 
-📊 MONITORING
+📊 MONITORING & STATS
 📊 Stats - Your storage & project counts
 🔄 Refresh - Check if projects are running
 📝 Errors - See error logs
-📅 Monthly Stats - View your monthly usage statistics
+🏆 Top Users - Monthly leaderboard (most active users)
 
 🔍 AUTO-DETECTION FEATURES
 • Entry Points: main.py, app.py, bot.py, run.py, server.py, etc.
@@ -1509,7 +1565,7 @@ def handle_zip(msg):
         
         bot.edit_message_text("📦 Extracted!", msg.chat.id, status_msg.message_id)
         
-        # Auto-detect entry point for uploaded projects too
+        # Auto-detect entry point
         entry_path, entry_file = find_entry_point(extract_path)
         
         if entry_path and entry_path != os.path.join(extract_path, "main.py"):
@@ -1517,7 +1573,6 @@ def handle_zip(msg):
             bot.edit_message_text(f"📝 Detected entry point: {entry_file} → renamed to main.py",
                                 msg.chat.id, status_msg.message_id)
         
-        # Detect project type
         project_type, _ = get_project_type(extract_path)
         bot.edit_message_text(f"🔍 Detected project type: {project_type}",
                             msg.chat.id, status_msg.message_id)
@@ -1656,8 +1711,8 @@ print(f"GitHub Integration: ENHANCED")
 print(f"Auto-Detection: main.py, app.py, bot.py, run.py, server.py")
 print(f"Project Types: Django, Flask, FastAPI, Discord, Telegram")
 print(f"Environment Variables: ENABLED")
-print(f"Monthly Stats: ENABLED")
-print(f"Auto-Delete Messages: 30 seconds")
+print(f"Monthly Leaderboard: ENABLED")
+print(f"Auto-Delete Messages: 30-60 seconds")
 print("="*50)
 
 # Start bot with error handling
