@@ -21,11 +21,14 @@ ADMIN_ID = 8446135201
 # Video Configuration - Add your video file ID or URL
 # OPTION 1: Use a video file ID from Telegram (after sending video to bot)
 # To get video file_id: Send video to bot, then check bot console or forward to @getidsbot
-# Video Configuration
-START_VIDEO_FILE_ID = "AAMCBQADGQEC_JfcadLFaAEMezxShNlNkIwpTB-pjBwAAt4dAAI0L5hWmZocd1RjvxgBAAdtAAM7BA"
-START_VIDEO_URL = ""
-USE_LOCAL_VIDEO = False
-LOCAL_VIDEO_PATH = "start_video.mp4"
+START_VIDEO_FILE_ID = ""  # Put your video file_id here
+
+# OPTION 2: Use a video URL (mp4 link)
+START_VIDEO_URL = ""  # Put your video URL here, e.g., "https://example.com/video.mp4"
+
+# OPTION 3: Use a local video file (put video.mp4 in same folder as bot)
+USE_LOCAL_VIDEO = True  # Set to True to use local video file
+LOCAL_VIDEO_PATH = "start_video.mp4"  # Name of your video file
 
 # Create custom bot class with auto-delete for all messages
 class AutoDeleteBot(telebot.TeleBot):
