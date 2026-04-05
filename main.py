@@ -19,146 +19,54 @@ BOT_TOKEN = "8389147569:AAGF2RxBRe8AiaW0_wN4rooJ5WF06zYtMho"
 ADMIN_ID = 7643981409
 
 # Video Configuration - Add your video file ID or URL
-# OPTION 1: Use a video file ID from Telegram (after sending video to bot)
-# To get video file_id: Send video to bot, then check bot console or forward to @getidsbot
 START_VIDEO_FILE_ID = ""  # Put your video file_id here
-
-# OPTION 2: Use a video URL (mp4 link)
-START_VIDEO_URL = ""  # Put your video URL here, e.g., "https://example.com/video.mp4"
-
-# OPTION 3: Use a local video file (put video.mp4 in same folder as bot)
-USE_LOCAL_VIDEO = True  # Set to True to use local video file
-LOCAL_VIDEO_PATH = "start_video.mp4"  # Name of your video file
+START_VIDEO_URL = ""  # Put your video URL here
+USE_LOCAL_VIDEO = True
+LOCAL_VIDEO_PATH = "start_video.mp4"
 
 # Create custom bot class with auto-delete for all messages
 class AutoDeleteBot(telebot.TeleBot):
     def send_message(self, chat_id, text, *args, **kwargs):
-        """Send message and auto-delete after 30 seconds"""
         msg = super().send_message(chat_id, text, *args, **kwargs)
-        
         def delete_later():
             time.sleep(30)
             try:
                 super().delete_message(chat_id, msg.message_id)
             except:
                 pass
-        
         threading.Thread(target=delete_later, daemon=True).start()
         return msg
     
     def edit_message_text(self, text, chat_id, message_id, *args, **kwargs):
-        """Edit message and auto-delete after 30 seconds"""
         msg = super().edit_message_text(text, chat_id, message_id, *args, **kwargs)
-        
         def delete_later():
             time.sleep(30)
             try:
                 super().delete_message(chat_id, message_id)
             except:
                 pass
-        
         threading.Thread(target=delete_later, daemon=True).start()
         return msg
     
     def send_video(self, chat_id, video, caption=None, *args, **kwargs):
-        """Send video with caption and auto-delete after 30 seconds"""
         msg = super().send_video(chat_id, video, caption=caption, *args, **kwargs)
-        
         def delete_later():
             time.sleep(30)
             try:
                 super().delete_message(chat_id, msg.message_id)
             except:
                 pass
-        
         threading.Thread(target=delete_later, daemon=True).start()
         return msg
 
-# Initialize bot with auto-delete
 bot = AutoDeleteBot(BOT_TOKEN)
 
 BASE_DIR = "projects"
 os.makedirs(BASE_DIR, exist_ok=True)
 
-# Store running processes per user
 running_projects = {}
 project_errors = {}
 
-# Monthly users tracking (simple counter)
-monthly_data = {
-    "current_month": datetime.now().strftime("%Y-%m"),
-    "users": set(),  # Set of user IDs who used the bot this month
-    "total_commands": 0,
-    "total_projects": 0
-}
-
-# File to save monthly stats
-MONTHLY_FILE = "monthly_users.json"
-
-def load_monthly_data():
-    """Load monthly user data from file"""
-    global monthly_data
-    if os.path.exists(MONTHLY_FILE):
-        try:
-            with open(MONTHLY_FILE, 'r') as f:
-                loaded = json.load(f)
-                current_month = datetime.now().strftime("%Y-%m")
-                if loaded.get("current_month") == current_month:
-                    # Convert users list back to set
-                    loaded["users"] = set(loaded.get("users", []))
-                    monthly_data = loaded
-                else:
-                    # New month, reset
-                    monthly_data = {
-                        "current_month": current_month,
-                        "users": set(),
-                        "total_commands": 0,
-                        "total_projects": 0
-                    }
-        except:
-            pass
-
-def save_monthly_data():
-    """Save monthly user data to file"""
-    try:
-        save_data = {
-            "current_month": monthly_data["current_month"],
-            "users": list(monthly_data["users"]),  # Convert set to list for JSON
-            "total_commands": monthly_data["total_commands"],
-            "total_projects": monthly_data["total_projects"]
-        }
-        with open(MONTHLY_FILE, 'w') as f:
-            json.dump(save_data, f, indent=2)
-    except:
-        pass
-
-def track_user_activity(user_id, is_command=True, is_project=False):
-    """Track user activity for monthly stats"""
-    current_month = datetime.now().strftime("%Y-%m")
-    
-    # Check if month changed
-    if monthly_data["current_month"] != current_month:
-        monthly_data["current_month"] = current_month
-        monthly_data["users"] = set()
-        monthly_data["total_commands"] = 0
-        monthly_data["total_projects"] = 0
-    
-    # Add user to monthly users set
-    monthly_data["users"].add(str(user_id))
-    
-    if is_command:
-        monthly_data["total_commands"] += 1
-    
-    if is_project:
-        monthly_data["total_projects"] += 1
-    
-    save_monthly_data()
-
-def get_monthly_users_count():
-    """Get total unique users this month"""
-    return len(monthly_data["users"])
-
-# Admin statistics
 admin_stats = {
     "total_users": 0,
     "total_projects": 0,
@@ -166,78 +74,66 @@ admin_stats = {
     "bot_start_time": datetime.now()
 }
 
-# Store environment variables
 project_env_vars = {}
 
 def safe_send_message(chat_id, text, reply_markup=None, parse_mode=None):
-    """Safely send message with auto-delete (already handled by bot class)"""
     try:
         return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception as e:
         plain_text = re.sub(r'[*_`~]', '', text)
         return bot.send_message(chat_id, plain_text, reply_markup=reply_markup)
 
-def get_welcome_text(user_id, is_admin, total_projects, monthly_users):
-    """Generate the welcome text message"""
+def get_welcome_text(user_id, is_admin, total_projects, running_count):
+    """Stylish welcome text with your exact format"""
+    role = "ADMIN" if is_admin else "USER"
     welcome_text = f"""
-🔥 *WELCOME TO PYTHON HOSTING*
+   ✦  𝗛 𝗘 𝗫   •   𝗕 𝗢 𝗧   •   𝗛 𝗢 𝗦 𝗧 𝗜 𝗡 𝗚  ✦
 
-✨ *Hex Python Hosting Panel v3.0*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ User-Specific Workspaces
-✅ GitHub Repository Deploy
-✅ Auto-Detect Entry Points
-✅ Environment Variables Support
-✅ Auto-Delete Messages (30 sec)
-✅ 24/7 Project Hosting
+              Hex Python Hosting v3.0
 
-📊 *MONTHLY STATS*
-├─ Active Users: {monthly_users:,}
-└─ This Month: {datetime.now().strftime('%B %Y')}
+Features
+  • 👤 User-specific workspaces
+  • 📂 GitHub repository deployment
+  • ⚡ Auto-detect entry points
+  • 🔐 Environment variables support
+  • ⏳ Auto-delete messages (30 sec)
+  • 🌐 24/7 project hosting
 
-👤 *Your Workspace:*
-├─ User ID: `{user_id}`
-├─ Projects: {total_projects}
-├─ Running: {len(get_user_running_projects(user_id))}
-└─ Role: {'👑 ADMIN' if is_admin else '👤 USER'}
+Workspace
+  • 🆔 ID         : `{user_id}`
+  • 📦 Projects   : {total_projects}
+  • 🟢 Running    : {running_count}
+  • 👑 Role       : {role}
 
-💡 *Need Help?* @Hexh4ckerOFC
 
-💻 *Powered by @Hexh4ckerOFC*
+Powered by
+  • 💻 @Hexh4ckerOFC
     """
     return welcome_text
 
-def send_start_video_with_text(chat_id, user_id, is_admin, total_projects, monthly_users):
-    """Send video with the welcome text as caption"""
-    welcome_text = get_welcome_text(user_id, is_admin, total_projects, monthly_users)
+def send_start_video_with_text(chat_id, user_id, is_admin, total_projects, running_count):
+    welcome_text = get_welcome_text(user_id, is_admin, total_projects, running_count)
     
     try:
-        # Try to send video based on configuration
         if START_VIDEO_FILE_ID:
-            # Send using file ID with caption
             bot.send_video(chat_id, START_VIDEO_FILE_ID, caption=welcome_text, parse_mode="Markdown")
             return True
         elif START_VIDEO_URL:
-            # Send using URL with caption
             bot.send_video(chat_id, START_VIDEO_URL, caption=welcome_text, parse_mode="Markdown")
             return True
         elif USE_LOCAL_VIDEO and os.path.exists(LOCAL_VIDEO_PATH):
-            # Send local video file with caption
             with open(LOCAL_VIDEO_PATH, 'rb') as video:
                 bot.send_video(chat_id, video, caption=welcome_text, parse_mode="Markdown")
             return True
         else:
-            # No video configured, send only text
             return False
     except Exception as e:
-        print(f"Failed to send video with caption: {e}")
-        # If video fails, send only text
+        print(f"Failed to send video: {e}")
         return False
 
 # ============== SIMPLE UI ==============
 
 def get_main_keyboard(user_id):
-    """Get main keyboard based on user role"""
     is_admin = (user_id == ADMIN_ID)
     
     if is_admin:
@@ -263,7 +159,6 @@ def get_main_keyboard(user_id):
         return markup
 
 def get_admin_keyboard():
-    """Admin panel inline keyboard"""
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
         InlineKeyboardButton("👥 All Users", callback_data="admin_users"),
@@ -281,7 +176,6 @@ def get_admin_keyboard():
 # ============== GITHUB INTEGRATION ==============
 
 def find_entry_point(project_path):
-    """Find the main entry point file"""
     entry_points = [
         "main.py", "app.py", "bot.py", "run.py", "server.py",
         "application.py", "wsgi.py", "manage.py", "index.py",
@@ -311,7 +205,6 @@ def find_entry_point(project_path):
     return None, None
 
 def get_project_type(project_path):
-    """Detect project type"""
     files = os.listdir(project_path)
     
     if 'requirements.txt' in files:
@@ -335,7 +228,6 @@ def get_project_type(project_path):
 
 @bot.message_handler(func=lambda m: m.text == "🐙 GitHub Deploy")
 def github_deploy_menu(msg):
-    track_user_activity(msg.chat.id, is_command=True)
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
         InlineKeyboardButton("📦 Deploy from GitHub URL", callback_data="github_url"),
@@ -446,8 +338,6 @@ def process_github_download(msg):
                     
                     size = get_folder_size(extract_path)
                     
-                    track_user_activity(user_id, is_project=True)
-                    
                     markup = InlineKeyboardMarkup()
                     markup.add(
                         InlineKeyboardButton("▶️ Start Now", callback_data=f"start_{project_name}"),
@@ -478,7 +368,6 @@ def process_github_download(msg):
 @bot.message_handler(func=lambda m: m.text == "⚙️ Env Vars")
 def env_vars_menu(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     projects = get_user_projects(user_id)
     
     if not projects:
@@ -656,28 +545,25 @@ def env_list_vars(call):
 def env_back(call):
     env_vars_menu(call.message)
 
-# ============== START COMMAND WITH VIDEO + TEXT AS CAPTION ==============
+# ============== START COMMAND ==============
 
 @bot.message_handler(commands=['start'])
 def start(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     is_admin = (user_id == ADMIN_ID)
     total_projects = len(get_user_projects(user_id))
-    monthly_users = get_monthly_users_count()
+    running_count = len(get_user_running_projects(user_id))
     
-    # Send video with welcome text as caption (combined in one message)
-    video_sent = send_start_video_with_text(user_id, user_id, is_admin, total_projects, monthly_users)
+    # Send video with stylish welcome text as caption
+    video_sent = send_start_video_with_text(user_id, user_id, is_admin, total_projects, running_count)
     
-    # If video failed to send or no video configured, send only text
+    # If video failed, send only text
     if not video_sent:
-        welcome_text = get_welcome_text(user_id, is_admin, total_projects, monthly_users)
+        welcome_text = get_welcome_text(user_id, is_admin, total_projects, running_count)
         safe_send_message(msg.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
     else:
-        # Still need to send the keyboard (buttons) after video
-        # Send just the keyboard as a separate message
-        keyboard_msg = "Use the buttons below to control your projects:"
-        safe_send_message(msg.chat.id, keyboard_msg, reply_markup=get_main_keyboard(user_id))
+        # Send keyboard after video
+        safe_send_message(msg.chat.id, "🔽 Use the buttons below:", reply_markup=get_main_keyboard(user_id))
     
     if is_admin:
         update_admin_stats()
@@ -686,18 +572,17 @@ def start(msg):
         minutes, seconds = divmod(remainder, 60)
         
         admin_notice = f"""
-👑 *ADMIN PANEL LOADED*
+✦  𝗛 𝗘 𝗫   •   𝗕 𝗢 𝗧   •   𝗛 𝗢 𝗦 𝗧 𝗜 𝗡 𝗚  ✦
 
-📊 *Quick Stats:*
-├─ Total Users: {admin_stats['total_users']}
-├─ Total Projects: {admin_stats['total_projects']}
-├─ Running: {admin_stats['total_running']}
-├─ Monthly Active: {monthly_users:,}
-└─ Uptime: {hours}h {minutes}m
+              Admin Panel Loaded
 
-Use the *Admin Panel* button for full control.
+Quick Stats
+  • 👥 Total Users  : {admin_stats['total_users']}
+  • 📦 Total Projects: {admin_stats['total_projects']}
+  • 🟢 Running      : {admin_stats['total_running']}
+  • ⏱️ Uptime       : {hours}h {minutes}m
 
-💻 *Powered by @Hexh4ckerOFC*
+Powered by @Hexh4ckerOFC
         """
         safe_send_message(msg.chat.id, admin_notice, parse_mode="Markdown")
 
@@ -706,30 +591,30 @@ Use the *Admin Panel* button for full control.
 @bot.message_handler(func=lambda m: m.text == "👑 Admin Panel")
 def admin_panel(msg):
     if msg.chat.id != ADMIN_ID:
-        safe_send_message(msg.chat.id, "⛔ *Access Denied!*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, "⛔ Access Denied!", parse_mode="Markdown")
         return
     
     update_admin_stats()
     uptime = datetime.now() - admin_stats["bot_start_time"]
     hours, remainder = divmod(int(uptime.total_seconds()), 3600)
     minutes, seconds = divmod(remainder, 60)
-    monthly_users = get_monthly_users_count()
     
     admin_text = f"""
-👑 *ADMIN CONTROL PANEL*
+✦  𝗛 𝗘 𝗫   •   𝗕 𝗢 𝗧   •   𝗛 𝗢 𝗦 𝗧 𝗜 𝗡 𝗚  ✦
 
-📈 *SYSTEM STATISTICS*
-├─ 👥 Total Users: {admin_stats['total_users']}
-├─ 📦 Total Projects: {admin_stats['total_projects']}
-├─ 🟢 Running: {admin_stats['total_running']}
-├─ ⚪ Stopped: {admin_stats['total_projects'] - admin_stats['total_running']}
-├─ 📅 Monthly Active: {monthly_users:,}
-└─ ⏱️ Uptime: {hours}h {minutes}m
+              ADMIN CONTROL PANEL
 
-🎛️ *CONTROLS*
-└─ Use the buttons below to manage the system
+System Statistics
+  • 👥 Total Users  : {admin_stats['total_users']}
+  • 📦 Total Projects: {admin_stats['total_projects']}
+  • 🟢 Running      : {admin_stats['total_running']}
+  • ⚪ Stopped      : {admin_stats['total_projects'] - admin_stats['total_running']}
+  • ⏱️ Uptime       : {hours}h {minutes}m
 
-💻 *Powered by @Hexh4ckerOFC*
+Controls
+  • Use the buttons below to manage the system
+
+Powered by @Hexh4ckerOFC
     """
     
     safe_send_message(msg.chat.id, admin_text, parse_mode="Markdown", reply_markup=get_admin_keyboard())
@@ -747,25 +632,25 @@ def handle_admin_callbacks(call):
     if action == "users":
         users = get_all_users()
         if not users:
-            bot.edit_message_text("📭 *No users found*", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            bot.edit_message_text("📭 No users found", call.message.chat.id, call.message.message_id)
         else:
-            user_list = f"👥 *ALL USERS LIST*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+            user_list = f"👥 ALL USERS LIST\n━━━━━━━━━━━━━━━━━━━━━━\n"
             for uid in users:
                 project_count = get_user_project_count(uid)
                 running_count = len(running_projects.get(uid, {}))
-                user_list += f"\n👤 `{uid}`\n├─ 📦 {project_count} projects\n└─ 🟢 {running_count} running\n"
-            user_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
+                user_list += f"\n👤 {uid}\n├─ 📦 {project_count} projects\n└─ 🟢 {running_count} running\n"
+            user_list += f"\n💻 Powered by @Hexh4ckerOFC"
             
             if len(user_list) > 4000:
                 user_list = user_list[:4000] + "\n... (truncated)"
             
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-            bot.edit_message_text(user_list, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+            bot.edit_message_text(user_list, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
     elif action == "projects":
         update_admin_stats()
-        text = f"📦 *ALL PROJECTS SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        text = f"📦 ALL PROJECTS SUMMARY\n━━━━━━━━━━━━━━━━━━━━━━\n"
         text += f"├─ Total Projects: {admin_stats['total_projects']}\n"
         text += f"├─ Running: {admin_stats['total_running']} 🟢\n"
         text += f"└─ Stopped: {admin_stats['total_projects'] - admin_stats['total_running']} ⚪\n"
@@ -774,7 +659,7 @@ def handle_admin_callbacks(call):
         for uid in users[:10]:
             user_projects = get_user_projects(uid)
             if user_projects:
-                text += f"\n👤 User `{uid}`:\n"
+                text += f"\n👤 User {uid}:\n"
                 for proj in user_projects[:5]:
                     is_running = proj in running_projects.get(uid, {})
                     icon = "🟢" if is_running else "⚪"
@@ -782,55 +667,55 @@ def handle_admin_callbacks(call):
                 if len(user_projects) > 5:
                     text += f"  ... and {len(user_projects)-5} more\n"
         
-        text += f"\n💻 *Powered by @Hexh4ckerOFC*"
+        text += f"\n💻 Powered by @Hexh4ckerOFC"
         
         if len(text) > 4000:
             text = text[:4000] + "\n... (truncated)"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
     elif action == "running":
-        running_list = f"🟢 *RUNNING PROJECTS*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        running_list = f"🟢 RUNNING PROJECTS\n━━━━━━━━━━━━━━━━━━━━━━\n"
         has_running = False
         for user_id, user_projects in running_projects.items():
             if user_projects:
                 has_running = True
-                running_list += f"\n👤 User `{user_id}`:\n"
+                running_list += f"\n👤 User {user_id}:\n"
                 for proj in user_projects.keys():
                     running_list += f"  🟢 {proj}\n"
         
         if not has_running:
-            running_list += "\n📭 *No projects currently running*"
+            running_list += "\n📭 No projects currently running"
         
-        running_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
+        running_list += f"\n💻 Powered by @Hexh4ckerOFC"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-        bot.edit_message_text(running_list, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        bot.edit_message_text(running_list, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
     elif action == "errors":
-        error_list = f"⚠️ *ERROR LOGS*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        error_list = f"⚠️ ERROR LOGS\n━━━━━━━━━━━━━━━━━━━━━━\n"
         has_errors = False
         for user_id, errors in project_errors.items():
             if errors:
                 has_errors = True
-                error_list += f"\n👤 User `{user_id}`:\n"
+                error_list += f"\n👤 User {user_id}:\n"
                 for proj, err in errors.items():
                     error_list += f"  📁 {proj}: {err[:50]}...\n"
         
         if not has_errors:
-            error_list += "\n✅ *No errors logged*"
+            error_list += "\n✅ No errors logged"
         
-        error_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
+        error_list += f"\n💻 Powered by @Hexh4ckerOFC"
         
         if len(error_list) > 4000:
             error_list = error_list[:4000] + "\n... (truncated)"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-        bot.edit_message_text(error_list, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        bot.edit_message_text(error_list, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
     elif action == "server":
         try:
@@ -841,72 +726,70 @@ def handle_admin_callbacks(call):
             disk_percent = (disk_usage.used / disk_usage.total) * 100
             
             server_text = f"""
-💾 *SERVER STATISTICS*
+💾 SERVER STATISTICS
 ━━━━━━━━━━━━━━━━━━━━━━
 
-💿 *DISK USAGE*
+💿 DISK USAGE
 ├─ Total: {disk_total} GB
 ├─ Used: {disk_used} GB ({disk_percent:.1f}%)
 ├─ Free: {disk_free} GB
 └─ Status: {'⚠️ Low Space' if disk_free < 5 else '✅ Healthy'}
 
-📂 *STORAGE PATHS*
+📂 STORAGE PATHS
 ├─ Base Dir: {BASE_DIR}
 └─ Projects Path: {os.path.abspath(BASE_DIR)}
 
-💻 *Powered by @Hexh4ckerOFC*
+💻 Powered by @Hexh4ckerOFC
             """
         except:
-            server_text = f"💾 *SERVER STATISTICS*\n━━━━━━━━━━━━━━━━━━━━━━\n❌ Unable to fetch disk statistics\n\n💻 *Powered by @Hexh4ckerOFC*"
+            server_text = f"💾 SERVER STATISTICS\n━━━━━━━━━━━━━━━━━━━━━━\n❌ Unable to fetch disk statistics\n\n💻 Powered by @Hexh4ckerOFC"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-        bot.edit_message_text(server_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        bot.edit_message_text(server_text, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
     elif action == "botstats":
         update_admin_stats()
         uptime = datetime.now() - admin_stats["bot_start_time"]
         hours, remainder = divmod(int(uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
-        monthly_users = get_monthly_users_count()
         
         stats_text = f"""
-📊 *BOT STATISTICS*
+📊 BOT STATISTICS
 ━━━━━━━━━━━━━━━━━━━━━━
 
-📈 *USAGE STATS*
+📈 USAGE STATS
 ├─ 👥 Total Users: {admin_stats['total_users']}
 ├─ 📦 Total Projects: {admin_stats['total_projects']}
 ├─ 🟢 Running Projects: {admin_stats['total_running']}
-├─ 📅 Monthly Active: {monthly_users:,}
 └─ 📁 Projects/User: {admin_stats['total_projects']/max(admin_stats['total_users'],1):.1f}
 
-⏱️ *BOT INFO*
+⏱️ BOT INFO
 ├─ Uptime: {hours}h {minutes}m {seconds}s
 ├─ Started: {admin_stats['bot_start_time'].strftime('%Y-%m-%d %H:%M:%S')}
-└─ Admin ID: `{ADMIN_ID}`
+└─ Admin ID: {ADMIN_ID}
 
-🔧 *SYSTEM*
+🔧 SYSTEM
 ├─ Python: {sys.version.split()[0]}
 └─ Platform: {sys.platform}
 
-💻 *Powered by @Hexh4ckerOFC*
+💻 Powered by @Hexh4ckerOFC
         """
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
-        bot.edit_message_text(stats_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        bot.edit_message_text(stats_text, call.message.chat.id, call.message.message_id, reply_markup=markup)
     
     elif action == "clean":
         cleaned = clean_orphaned_processes()
-        bot.edit_message_text(f"✅ *Cleanup Complete*\n\n🗑️ Removed {cleaned} orphaned process entries", 
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"✅ Cleanup Complete\n\n🗑️ Removed {cleaned} orphaned process entries", 
+                            call.message.chat.id, call.message.message_id)
         time.sleep(2)
         admin_panel(call.message)
     
     elif action == "broadcast":
-        bot.edit_message_text("📢 *Broadcast Mode*\n\nSend the message you want to broadcast to all users.\n\nType /cancel to cancel.", 
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text("📢 Broadcast Mode\n\nSend the message you want to broadcast to all users.\n\nType /cancel to cancel.", 
+                            call.message.chat.id, call.message.message_id)
         bot.register_next_step_handler(call.message, process_broadcast)
     
     elif action == "back":
@@ -922,12 +805,12 @@ def process_broadcast(msg):
         safe_send_message(msg.chat.id, "❌ Broadcast cancelled.", reply_markup=get_main_keyboard(msg.chat.id))
         return
     
-    status_msg = safe_send_message(msg.chat.id, "📡 *Broadcasting message...*", parse_mode="Markdown")
+    status_msg = safe_send_message(msg.chat.id, "📡 Broadcasting message...")
     
     success, failed = broadcast_message(msg.text)
     
-    bot.edit_message_text(f"✅ *Broadcast Complete*\n\n📨 Sent: {success}\n❌ Failed: {failed}", 
-                        msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+    bot.edit_message_text(f"✅ Broadcast Complete\n\n📨 Sent: {success}\n❌ Failed: {failed}", 
+                        msg.chat.id, status_msg.message_id)
     
     safe_send_message(msg.chat.id, "👑 Admin Panel", reply_markup=get_admin_keyboard())
 
@@ -935,21 +818,19 @@ def process_broadcast(msg):
 
 @bot.message_handler(func=lambda m: m.text == "📦 Upload" or m.text == "📦 Upload Project")
 def upload_btn(msg):
-    track_user_activity(msg.chat.id, is_command=True)
-    safe_send_message(msg.chat.id, "📦 *Send your .zip file with:*\n• `main.py` (or any Python file)\n• `requirements.txt`\n\n📝 *Max size: 50MB*\n🔒 *Your files are private to you*\n\n🐙 *Or use GitHub Deploy for repositories!*", parse_mode="Markdown")
+    safe_send_message(msg.chat.id, "📦 Send your .zip file with:\n• main.py (or any Python file)\n• requirements.txt\n\n📝 Max size: 50MB\n🔒 Your files are private to you\n\n🐙 Or use GitHub Deploy for repositories!")
 
 @bot.message_handler(func=lambda m: m.text == "📁 Projects" or m.text == "📁 My Projects")
 def file_manager(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     projects = get_user_projects(user_id)
     user_running = get_user_running_projects(user_id)
     
     if not projects:
-        safe_send_message(msg.chat.id, "📂 *No projects found*\nUse 📦 Upload or 🐙 GitHub Deploy to add one.", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, "📂 No projects found\nUse 📦 Upload or 🐙 GitHub Deploy to add one.")
         return
     
-    project_list = f"📁 *YOUR PROJECTS*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+    project_list = f"📁 YOUR PROJECTS\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for project in projects:
         is_running = project in user_running
         has_main = os.path.exists(os.path.join(get_user_dir(user_id), project, "main.py"))
@@ -962,20 +843,19 @@ def file_manager(msg):
         error_icon = "⚠️" if has_error else "✓"
         github_icon = "🐙" if is_github else "📦"
         
-        project_list += f"\n{status_icon} `{project}`\n   ├─ Type: {github_icon}\n   ├─ main.py: {main_icon}\n   └─ Status: {error_icon}\n"
+        project_list += f"\n{status_icon} {project}\n   ├─ Type: {github_icon}\n   ├─ main.py: {main_icon}\n   └─ Status: {error_icon}\n"
     
-    project_list += f"\n💻 *Powered by @Hexh4ckerOFC*"
-    safe_send_message(msg.chat.id, project_list, parse_mode="Markdown")
+    project_list += f"\n💻 Powered by @Hexh4ckerOFC"
+    safe_send_message(msg.chat.id, project_list)
 
 @bot.message_handler(func=lambda m: m.text == "▶️ Start")
 def start_project_menu(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     projects = get_user_projects(user_id)
     user_running = get_user_running_projects(user_id)
     
     if not projects:
-        safe_send_message(msg.chat.id, "❌ *No projects found to start*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, "❌ No projects found to start")
         return
     
     markup = InlineKeyboardMarkup(row_width=2)
@@ -984,50 +864,47 @@ def start_project_menu(msg):
             markup.add(InlineKeyboardButton(f"▶️ {project}", callback_data=f"start_{project}"))
     
     if not markup.keyboard:
-        safe_send_message(msg.chat.id, f"✅ *All your projects are already running!*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, f"✅ All your projects are already running!")
     else:
-        safe_send_message(msg.chat.id, "🚀 *Select project to start:*", parse_mode="Markdown", reply_markup=markup)
+        safe_send_message(msg.chat.id, "🚀 Select project to start:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "⏹️ Stop")
 def stop_project_menu(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     user_running = get_user_running_projects(user_id)
     
     if not user_running:
-        safe_send_message(msg.chat.id, "⚪ *No projects are currently running*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, "⚪ No projects are currently running")
         return
     
     markup = InlineKeyboardMarkup(row_width=2)
     for project in user_running.keys():
         markup.add(InlineKeyboardButton(f"⏹️ {project}", callback_data=f"stop_{project}"))
     
-    safe_send_message(msg.chat.id, "🛑 *Select project to stop:*", parse_mode="Markdown", reply_markup=markup)
+    safe_send_message(msg.chat.id, "🛑 Select project to stop:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "🔄 Restart")
 def restart_project_menu(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     projects = get_user_projects(user_id)
     
     if not projects:
-        safe_send_message(msg.chat.id, "❌ *No projects found to restart*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, "❌ No projects found to restart")
         return
     
     markup = InlineKeyboardMarkup(row_width=2)
     for project in projects:
         markup.add(InlineKeyboardButton(f"🔄 {project}", callback_data=f"restart_{project}"))
     
-    safe_send_message(msg.chat.id, "🔄 *Select project to restart:*", parse_mode="Markdown", reply_markup=markup)
+    safe_send_message(msg.chat.id, "🔄 Select project to restart:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "🗑️ Delete")
 def delete_project_menu(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     projects = get_user_projects(user_id)
     
     if not projects:
-        safe_send_message(msg.chat.id, "📂 *No projects to delete*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, "📂 No projects to delete")
         return
     
     markup = InlineKeyboardMarkup(row_width=2)
@@ -1035,30 +912,25 @@ def delete_project_menu(msg):
         markup.add(InlineKeyboardButton(f"🗑️ {project}", callback_data=f"delete_{project}"))
     markup.add(InlineKeyboardButton("❌ Cancel", callback_data="cancel_delete"))
     
-    safe_send_message(msg.chat.id, "⚠️ *Select project to delete (IRREVERSIBLE):*", 
-                     parse_mode="Markdown", reply_markup=markup)
+    safe_send_message(msg.chat.id, "⚠️ Select project to delete (IRREVERSIBLE):", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "🗑️ Delete All")
 def delete_all(msg):
-    track_user_activity(msg.chat.id, is_command=True)
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("✅ YES, Delete All", callback_data="confirm_delete_all"),
         InlineKeyboardButton("❌ NO, Cancel", callback_data="cancel_delete")
     )
-    safe_send_message(msg.chat.id, "⚠️ *WARNING: This will delete ALL your projects!*\nAre you sure?", 
-                     parse_mode="Markdown", reply_markup=markup)
+    safe_send_message(msg.chat.id, "⚠️ WARNING: This will delete ALL your projects!\nAre you sure?", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "📊 Stats")
 def server_info(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     total_projects = len(get_user_projects(user_id))
     running_count = len(get_user_running_projects(user_id))
     user_errors = get_user_errors(user_id)
     error_count = len(user_errors)
     github_count = len([p for p in get_user_projects(user_id) if p.startswith("github_")])
-    monthly_users = get_monthly_users_count()
     
     try:
         user_dir = get_user_dir(user_id)
@@ -1071,37 +943,34 @@ def server_info(msg):
         disk_text = "N/A"
     
     stats_text = f"""
-📊 *YOUR STATISTICS*
-━━━━━━━━━━━━━━━━━━━━━━
+✦  𝗛 𝗘 𝗫   •   𝗕 𝗢 𝗧   •   𝗛 𝗢 𝗦 𝗧 𝗜 𝗡 𝗚  ✦
 
-📦 *PROJECTS*
-├─ Total: {total_projects}
-├─ Running: {running_count} 🟢
-├─ Stopped: {total_projects - running_count} ⚪
-├─ GitHub: {github_count} 🐙
-└─ Errors: {error_count} ⚠️
+              YOUR STATISTICS
 
-💾 *STORAGE*
-└─ Disk Usage: {disk_text}
+Projects
+  • 📦 Total    : {total_projects}
+  • 🟢 Running  : {running_count}
+  • ⚪ Stopped  : {total_projects - running_count}
+  • 🐙 GitHub   : {github_count}
+  • ⚠️ Errors   : {error_count}
 
-📅 *MONTHLY STATS*
-└─ Active Users: {monthly_users:,}
+Storage
+  • 💾 Disk Usage: {disk_text}
 
-👤 *USER INFO*
-├─ User ID: `{user_id}`
-└─ Workspace: Private
+User Info
+  • 🆔 ID: {user_id}
+  • 📁 Workspace: Private
 
-🕐 *Server Time*
-└─ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Server Time
+  • 🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-💻 *Powered by @Hexh4ckerOFC*
+Powered by @Hexh4ckerOFC
     """
-    safe_send_message(msg.chat.id, stats_text, parse_mode="Markdown")
+    safe_send_message(msg.chat.id, stats_text)
 
 @bot.message_handler(func=lambda m: m.text == "🔄 Refresh")
 def refresh_status(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     user_running = get_user_running_projects(user_id)
     dead_projects = []
     
@@ -1114,122 +983,108 @@ def refresh_status(msg):
             user_errors[project] = f"⚠️ Process died at {datetime.now().strftime('%H:%M:%S')}"
     
     if dead_projects:
-        safe_send_message(msg.chat.id, f"⚠️ *Detected dead processes:*\n{', '.join(dead_projects)}\n\nUse ▶️ Start to restart them.", 
-                         parse_mode="Markdown")
+        safe_send_message(msg.chat.id, f"⚠️ Detected dead processes:\n{', '.join(dead_projects)}\n\nUse ▶️ Start to restart them.")
     else:
         running_count = len(user_running)
-        safe_send_message(msg.chat.id, f"✅ *Status Refreshed* | 🟢 Running: {running_count}", 
-                         parse_mode="Markdown")
+        safe_send_message(msg.chat.id, f"✅ Status Refreshed | 🟢 Running: {running_count}")
 
 @bot.message_handler(func=lambda m: m.text == "📝 Errors")
 def view_errors(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_command=True)
     user_errors = get_user_errors(user_id)
     
     if not user_errors:
-        safe_send_message(msg.chat.id, "✅ *No errors logged! All projects running smoothly.*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, "✅ No errors logged! All projects running smoothly.")
         return
     
-    error_text = f"⚠️ *ERROR LOG*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+    error_text = f"⚠️ ERROR LOG\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for project, error in user_errors.items():
-        error_text += f"\n📁 `{project}`\n└─ {error[:100]}\n"
+        error_text += f"\n📁 {project}\n└─ {error[:100]}\n"
     
     if len(error_text) > 4000:
         error_text = error_text[:4000] + "\n... (truncated)"
     
-    error_text += f"\n💻 *Powered by @Hexh4ckerOFC*"
-    safe_send_message(msg.chat.id, error_text, parse_mode="Markdown")
+    error_text += f"\n💻 Powered by @Hexh4ckerOFC"
+    safe_send_message(msg.chat.id, error_text)
 
 @bot.message_handler(func=lambda m: m.text == "❓ Help")
 def help_command(msg):
-    track_user_activity(msg.chat.id, is_command=True)
     help_text = f"""
-📚 *HELP MENU v3.0*
-━━━━━━━━━━━━━━━━━━━━━━
+✦  𝗛 𝗘 𝗫   •   𝗕 𝗢 𝗧   •   𝗛 𝗢 𝗦 𝗧 𝗜 𝗡 𝗚  ✦
 
-🎯 *PROJECT MANAGEMENT*
-📦 Upload - Deploy new .zip project
-🐙 GitHub Deploy - Clone from GitHub (auto-detects entry points)
-📁 Projects - View all projects with status
-▶️ Start - Run a specific project
-⏹️ Stop - Stop running project
-🔄 Restart - Restart a project
-🗑️ Delete - Delete specific project
-🗑️ Delete All - Delete ALL your projects
+              HELP MENU v3.0
 
-⚙️ *ENVIRONMENT VARIABLES*
-⚙️ Env Vars - Set environment variables for projects
-• KEY=value format
-• Saved to .env file
-• Auto-applied on restart
+Project Management
+  • 📦 Upload - Deploy new .zip project
+  • 🐙 GitHub Deploy - Clone from GitHub
+  • 📁 Projects - View all projects
+  • ▶️ Start - Run a project
+  • ⏹️ Stop - Stop running project
+  • 🔄 Restart - Restart a project
+  • 🗑️ Delete - Delete a project
+  • 🗑️ Delete All - Delete ALL projects
 
-📊 *MONITORING*
-📊 Stats - Your storage & project counts
-🔄 Refresh - Check if projects are running
-📝 Errors - See error logs
+Environment Variables
+  • ⚙️ Env Vars - Set KEY=value for projects
+  • Saved to .env file
+  • Auto-applied on restart
 
-🔍 *AUTO-DETECTION FEATURES*
-• Entry Points: main.py, app.py, bot.py, run.py, server.py, etc.
-• Project Types: Django, Flask, FastAPI, Discord Bot, Telegram Bot
-• Auto-renames detected entry file to main.py
+Monitoring
+  • 📊 Stats - Your storage & counts
+  • 🔄 Refresh - Check running status
+  • 📝 Errors - View error logs
 
-💡 *MESSAGE FEATURES*
-• All messages auto-delete after 30 seconds
-• Clean and organized chat
+Auto-Detection
+  • Entry Points: main.py, app.py, bot.py, run.py, server.py
+  • Project Types: Django, Flask, FastAPI, Discord, Telegram
+  • Auto-renames to main.py
 
-📅 *MONTHLY STATS*
-• Shows total unique users this month
-• Resets on the 1st of each month
+Message Features
+  • All messages auto-delete after 30 seconds
 
-🔒 *PRIVACY*
-• Each user has their own private workspace
-• No file conflicts between users
-• Your projects are completely isolated
+Privacy
+  • Each user has private workspace
+  • No file conflicts
+  • Complete isolation
 
-🆘 *SUPPORT*
-Contact: @Hexh4ckerOFC
+Support: @Hexh4ckerOFC
 
-🟢 *Bot Status: ONLINE & FULLY WORKING*
+Bot Status: ONLINE
 
-💻 *Powered by @Hexh4ckerOFC*
+Powered by @Hexh4ckerOFC
     """
-    safe_send_message(msg.chat.id, help_text, parse_mode="Markdown")
+    safe_send_message(msg.chat.id, help_text)
 
 # ============== CALLBACK HANDLERS ==============
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     user_id = call.message.chat.id
-    track_user_activity(user_id, is_command=True)
     
-    # Handle Start Project
     if call.data.startswith("start_"):
         project_name = call.data.replace("start_", "")
         result = start_project(user_id, project_name)
         if result:
-            bot.edit_message_text(f"✅ *'{project_name}' started successfully!*", 
-                                call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"✅ {project_name} started successfully!", 
+                                call.message.chat.id, call.message.message_id)
         else:
-            bot.edit_message_text(f"❌ *Failed to start '{project_name}'*\nCheck if main.py exists!", 
-                                call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"❌ Failed to start {project_name}\nCheck if main.py exists!", 
+                                call.message.chat.id, call.message.message_id)
     
-    # Handle Stop Project
     elif call.data.startswith("stop_"):
         project_name = call.data.replace("stop_", "")
         if project_name in get_user_running_projects(user_id):
             stop_project(user_id, project_name)
-            bot.edit_message_text(f"⏹️ *'{project_name}' stopped successfully*", 
-                                call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"⏹️ {project_name} stopped successfully", 
+                                call.message.chat.id, call.message.message_id)
         else:
-            bot.edit_message_text(f"⚠️ *'{project_name}' is not running*", 
-                                call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"⚠️ {project_name} is not running", 
+                                call.message.chat.id, call.message.message_id)
     
-    # Handle Restart Project
     elif call.data.startswith("restart_"):
         project_name = call.data.replace("restart_", "")
-        bot.edit_message_text(f"🔄 *Restarting '{project_name}'...*", 
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"🔄 Restarting {project_name}...", 
+                            call.message.chat.id, call.message.message_id)
         
         if project_name in get_user_running_projects(user_id):
             stop_project(user_id, project_name)
@@ -1237,18 +1092,16 @@ def handle_callbacks(call):
         
         result = start_project(user_id, project_name)
         if result:
-            safe_send_message(call.message.chat.id, f"✅ *'{project_name}' restarted successfully!*", parse_mode="Markdown")
+            safe_send_message(call.message.chat.id, f"✅ {project_name} restarted successfully!")
         else:
-            safe_send_message(call.message.chat.id, f"❌ *Failed to restart '{project_name}'*", parse_mode="Markdown")
+            safe_send_message(call.message.chat.id, f"❌ Failed to restart {project_name}")
     
-    # Handle Delete Project
     elif call.data.startswith("delete_"):
         project_name = call.data.replace("delete_", "")
         delete_project(user_id, project_name)
-        bot.edit_message_text(f"🗑️ *Project '{project_name}' deleted*", 
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"🗑️ Project {project_name} deleted", 
+                            call.message.chat.id, call.message.message_id)
     
-    # Handle Delete All
     elif call.data == "confirm_delete_all":
         user_dir = get_user_dir(user_id)
         user_running = get_user_running_projects(user_id)
@@ -1266,13 +1119,12 @@ def handle_callbacks(call):
             if os.path.isdir(item_path):
                 shutil.rmtree(item_path)
         
-        bot.edit_message_text("🗑️ *ALL your projects deleted successfully!*", 
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text("🗑️ ALL your projects deleted successfully!", 
+                            call.message.chat.id, call.message.message_id)
     
-    # Handle Cancel
     elif call.data == "cancel_delete":
-        bot.edit_message_text("❌ *Action cancelled*", 
-                            call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text("❌ Action cancelled", 
+                            call.message.chat.id, call.message.message_id)
     
     bot.answer_callback_query(call.id)
 
@@ -1309,7 +1161,7 @@ def start_project(user_id, project_name):
     user_running = get_user_running_projects(user_id)
     
     if not os.path.exists(main_file):
-        error_msg = f"main.py not found in '{project_name}'"
+        error_msg = f"main.py not found in {project_name}"
         user_errors = get_user_errors(user_id)
         user_errors[project_name] = error_msg
         return False
@@ -1432,13 +1284,12 @@ def delete_project(user_id, project_name):
 @bot.message_handler(content_types=['document'])
 def handle_zip(msg):
     user_id = msg.chat.id
-    track_user_activity(user_id, is_project=True)
     
     if not msg.document.file_name.endswith(".zip"):
         safe_send_message(msg.chat.id, "❌ Send only .zip file")
         return
 
-    status_msg = safe_send_message(msg.chat.id, "📦 *Processing upload...*", parse_mode="Markdown")
+    status_msg = safe_send_message(msg.chat.id, "📦 Processing upload...")
 
     file_info = bot.get_file(msg.document.file_id)
     downloaded = bot.download_file(file_info.file_path)
@@ -1453,7 +1304,7 @@ def handle_zip(msg):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         project_name = f"{project_name}_{timestamp}"
         project_path = os.path.join(user_dir, project_name)
-        safe_send_message(msg.chat.id, f"📝 *Project renamed to '{project_name}' to avoid conflict*", parse_mode="Markdown")
+        safe_send_message(msg.chat.id, f"📝 Project renamed to {project_name} to avoid conflict")
     
     try:
         zip_path = os.path.join(user_dir, f"{project_name}.zip")
@@ -1476,25 +1327,24 @@ def handle_zip(msg):
         
         os.remove(zip_path)
         
-        bot.edit_message_text("📦 *Extracted!*", msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+        bot.edit_message_text("📦 Extracted!", msg.chat.id, status_msg.message_id)
         
-        # Auto-detect entry point
         entry_path, entry_file = find_entry_point(extract_path)
         
         if entry_path and entry_path != os.path.join(extract_path, "main.py"):
             shutil.move(entry_path, os.path.join(extract_path, "main.py"))
-            bot.edit_message_text(f"📝 *Detected entry point: {entry_file} → renamed to main.py*",
-                                msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"📝 Detected entry point: {entry_file} → renamed to main.py",
+                                msg.chat.id, status_msg.message_id)
         
         project_type, _ = get_project_type(extract_path)
-        bot.edit_message_text(f"🔍 *Detected project type: {project_type}*",
-                            msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"🔍 Detected project type: {project_type}",
+                            msg.chat.id, status_msg.message_id)
         
         req_file = os.path.join(extract_path, "requirements.txt")
         if os.path.exists(req_file):
             subprocess.Popen(["pip", "install", "-r", req_file], cwd=extract_path,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            bot.edit_message_text("📥 *Installing requirements...*", msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+            bot.edit_message_text("📥 Installing requirements...", msg.chat.id, status_msg.message_id)
         
         main_file = os.path.join(extract_path, "main.py")
         size = get_folder_size(extract_path)
@@ -1505,13 +1355,13 @@ def handle_zip(msg):
             InlineKeyboardButton("⚙️ Set Env Vars", callback_data=f"env_{project_name}")
         )
         
-        bot.edit_message_text(f"✅ *Project '{project_name}' uploaded successfully!*\n\n📁 Size: {size}\n📄 Entry: {'✅' if os.path.exists(main_file) else '❌'}\n🔧 Type: {project_type}\n\nClick below to start:", 
-                            msg.chat.id, status_msg.message_id, parse_mode="Markdown", reply_markup=markup)
+        bot.edit_message_text(f"✅ Project {project_name} uploaded successfully!\n\n📁 Size: {size}\n📄 Entry: {'✅' if os.path.exists(main_file) else '❌'}\n🔧 Type: {project_type}\n\nClick below to start:", 
+                            msg.chat.id, status_msg.message_id, reply_markup=markup)
         
     except Exception as e:
         error_msg = str(e)
-        bot.edit_message_text(f"❌ *Upload failed:* `{error_msg[:150]}`", 
-                            msg.chat.id, status_msg.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"❌ Upload failed: {error_msg[:150]}", 
+                            msg.chat.id, status_msg.message_id)
         user_errors = get_user_errors(user_id)
         user_errors[project_name] = error_msg
 
@@ -1573,7 +1423,7 @@ def broadcast_message(message_text, user_ids=None):
     
     for uid in user_ids:
         try:
-            safe_send_message(uid, f"📢 *ANNOUNCEMENT*\n\n{message_text}", parse_mode="Markdown")
+            safe_send_message(uid, f"📢 ANNOUNCEMENT\n\n{message_text}")
             success += 1
         except:
             failed += 1
@@ -1604,16 +1454,13 @@ def monitor_processes():
                     project_errors[user_id][project_name] = f"⚠️ Crashed at {datetime.now().strftime('%H:%M:%S')}"
                     print(f"⚠️ User {user_id} project '{project_name}' crashed")
 
-# Load monthly data on startup
-load_monthly_data()
-
 monitor_thread = threading.Thread(target=monitor_processes, daemon=True)
 monitor_thread.start()
 
 # ============== BOT STARTUP ==============
 
 print("="*50)
-print("🔥 PYTHON HOSTING PANEL v3.0 - READY")
+print("  ✦  H E X   •   B O T   •   H O S T I N G  ✦")
 print("="*50)
 print("✅ Bot Running Successfully!")
 print(f"📁 Base Directory: {BASE_DIR}")
@@ -1624,12 +1471,9 @@ print(f"🐙 GitHub Integration: ENHANCED")
 print(f"🔍 Auto-Detection: main.py, app.py, bot.py, run.py, server.py")
 print(f"🔧 Project Types: Django, Flask, FastAPI, Discord, Telegram")
 print(f"⚙️ Environment Variables: ENABLED")
-print(f"📅 Monthly Users Tracking: ENABLED")
 print(f"🗑️ Auto-Delete Messages: 30 seconds")
-print(f"🎬 Start Video: {'ENABLED' if (START_VIDEO_FILE_ID or START_VIDEO_URL or USE_LOCAL_VIDEO) else 'DISABLED'}")
 print("="*50)
 
-# Start bot with error handling
 while True:
     try:
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
