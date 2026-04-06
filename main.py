@@ -7,10 +7,10 @@ import time
 import threading
 import signal
 import sys
+import json
 from datetime import datetime
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, InputFile
 import requests
-import json
 import re
 
 BOT_TOKEN = "8389147569:AAGF2RxBRe8AiaW0_wN4rooJ5WF06zYtMho"
@@ -18,46 +18,126 @@ BOT_TOKEN = "8389147569:AAGF2RxBRe8AiaW0_wN4rooJ5WF06zYtMho"
 # Admin Configuration
 ADMIN_ID = 7643981409
 
-# Video Configuration - Add your video file ID or URL
-START_VIDEO_FILE_ID = ""  # Put your video file_id here
-START_VIDEO_URL = ""  # Put your video URL here
+# Video Configuration
+START_VIDEO_FILE_ID = ""
+START_VIDEO_URL = ""
 USE_LOCAL_VIDEO = True
 LOCAL_VIDEO_PATH = "start_video.mp4"
 
-# Create custom bot class with auto-delete for all messages
+# Custom Welcome Message File
+WELCOME_FILE = "welcome_message.json"
+
+# Default welcome message
+DEFAULT_WELCOME = """✦  𝗛 𝗘 𝗫   •   𝗕 𝗢 𝗧   •   𝗛 𝗢 𝗦 𝗧 𝗜 𝗡 𝗚  ✦
+
+              Hex Python Hosting v3.0
+
+Features
+  • 👤 User-specific workspaces
+  • 📂 GitHub repository deployment
+  • ⚡ Auto-detect entry points
+  • 🔐 Environment variables support
+  • ⏳ Auto-delete messages (30 sec)
+  • 🌐 24/7 project hosting
+
+Workspace
+  • 🆔 ID         : {user_id}
+  • 📦 Projects   : {total_projects}
+  • 🟢 Running    : {running_count}
+  • 👑 Role       : {role}
+
+Powered by
+  • 💻 @Hexh4ckerOFC"""
+
+def load_welcome_message():
+    """Load custom welcome message from file"""
+    if os.path.exists(WELCOME_FILE):
+        try:
+            with open(WELCOME_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get("message", DEFAULT_WELCOME)
+        except:
+            return DEFAULT_WELCOME
+    return DEFAULT_WELCOME
+
+def save_welcome_message(message):
+    """Save custom welcome message to file"""
+    try:
+        with open(WELCOME_FILE, 'w') as f:
+            json.dump({"message": message}, f, indent=2)
+        return True
+    except:
+        return False
+
+def get_welcome_text(user_id, is_admin, total_projects, running_count):
+    """Get welcome text with dynamic values"""
+    role = "ADMIN" if is_admin else "USER"
+    welcome_template = load_welcome_message()
+    
+    # Replace placeholders with actual values
+    welcome_text = welcome_template.format(
+        user_id=user_id,
+        total_projects=total_projects,
+        running_count=running_count,
+        role=role
+    )
+    return welcome_text
+
+# Create custom bot class with FIXED auto-delete for all messages
 class AutoDeleteBot(telebot.TeleBot):
     def send_message(self, chat_id, text, *args, **kwargs):
-        msg = super().send_message(chat_id, text, *args, **kwargs)
-        def delete_later():
-            time.sleep(30)
-            try:
-                super().delete_message(chat_id, msg.message_id)
-            except:
-                pass
-        threading.Thread(target=delete_later, daemon=True).start()
-        return msg
+        """Send message and auto-delete after 30 seconds"""
+        try:
+            msg = super().send_message(chat_id, text, *args, **kwargs)
+            
+            def delete_later():
+                time.sleep(30)
+                try:
+                    super().delete_message(chat_id, msg.message_id)
+                except Exception as e:
+                    pass
+            
+            threading.Thread(target=delete_later, daemon=True).start()
+            return msg
+        except Exception as e:
+            print(f"Send message error: {e}")
+            return None
     
     def edit_message_text(self, text, chat_id, message_id, *args, **kwargs):
-        msg = super().edit_message_text(text, chat_id, message_id, *args, **kwargs)
-        def delete_later():
-            time.sleep(30)
-            try:
-                super().delete_message(chat_id, message_id)
-            except:
-                pass
-        threading.Thread(target=delete_later, daemon=True).start()
-        return msg
+        """Edit message and auto-delete after 30 seconds"""
+        try:
+            msg = super().edit_message_text(text, chat_id, message_id, *args, **kwargs)
+            
+            def delete_later():
+                time.sleep(30)
+                try:
+                    super().delete_message(chat_id, message_id)
+                except Exception as e:
+                    pass
+            
+            threading.Thread(target=delete_later, daemon=True).start()
+            return msg
+        except Exception as e:
+            print(f"Edit message error: {e}")
+            return None
     
     def send_video(self, chat_id, video, caption=None, *args, **kwargs):
-        msg = super().send_video(chat_id, video, caption=caption, *args, **kwargs)
-        def delete_later():
-            time.sleep(30)
-            try:
-                super().delete_message(chat_id, msg.message_id)
-            except:
-                pass
-        threading.Thread(target=delete_later, daemon=True).start()
-        return msg
+        """Send video with caption and auto-delete after 30 seconds"""
+        try:
+            msg = super().send_video(chat_id, video, caption=caption, *args, **kwargs)
+            
+            def delete_later():
+                time.sleep(30)
+                try:
+                    super().delete_message(chat_id, msg.message_id)
+                except Exception as e:
+                    pass
+            
+            threading.Thread(target=delete_later, daemon=True).start()
+            return msg
+        except Exception as e:
+            print(f"Send video error: {e}")
+            return None
 
 bot = AutoDeleteBot(BOT_TOKEN)
 
@@ -77,41 +157,15 @@ admin_stats = {
 project_env_vars = {}
 
 def safe_send_message(chat_id, text, reply_markup=None, parse_mode=None):
+    """Safely send message with auto-delete"""
     try:
         return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception as e:
         plain_text = re.sub(r'[*_`~]', '', text)
         return bot.send_message(chat_id, plain_text, reply_markup=reply_markup)
 
-def get_welcome_text(user_id, is_admin, total_projects, running_count):
-    """Stylish welcome text with your exact format"""
-    role = "ADMIN" if is_admin else "USER"
-    welcome_text = f"""
-   ✦  𝗛 𝗘 𝗫   •   𝗕 𝗢 𝗧   •   𝗛 𝗢 𝗦 𝗧 𝗜 𝗡 𝗚  ✦
-
-              Hex Python Hosting v3.0
-
-Features
-  • 👤 User-specific workspaces
-  • 📂 GitHub repository deployment
-  • ⚡ Auto-detect entry points
-  • 🔐 Environment variables support
-  • ⏳ Auto-delete messages (30 sec)
-  • 🌐 24/7 project hosting
-
-Workspace
-  • 🆔 ID         : `{user_id}`
-  • 📦 Projects   : {total_projects}
-  • 🟢 Running    : {running_count}
-  • 👑 Role       : {role}
-
-
-Powered by
-  • 💻 @Hexh4ckerOFC
-    """
-    return welcome_text
-
 def send_start_video_with_text(chat_id, user_id, is_admin, total_projects, running_count):
+    """Send video with welcome text as caption"""
     welcome_text = get_welcome_text(user_id, is_admin, total_projects, running_count)
     
     try:
@@ -167,11 +221,66 @@ def get_admin_keyboard():
         InlineKeyboardButton("⚠️ Error Logs", callback_data="admin_errors"),
         InlineKeyboardButton("💾 Server Stats", callback_data="admin_server"),
         InlineKeyboardButton("📊 Bot Stats", callback_data="admin_botstats"),
+        InlineKeyboardButton("📝 Edit Welcome Msg", callback_data="admin_edit_welcome"),
+        InlineKeyboardButton("🔄 Reset Welcome", callback_data="admin_reset_welcome"),
         InlineKeyboardButton("🗑️ Clean Orphaned", callback_data="admin_clean"),
         InlineKeyboardButton("🔄 Broadcast", callback_data="admin_broadcast"),
         InlineKeyboardButton("❌ Close", callback_data="admin_close")
     )
     return markup
+
+# ============== WELCOME MESSAGE EDITOR ==============
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_edit_welcome")
+def admin_edit_welcome(call):
+    if call.message.chat.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "Admin only!")
+        return
+    
+    current_msg = load_welcome_message()
+    bot.edit_message_text(
+        f"📝 *EDIT WELCOME MESSAGE*\n\n"
+        f"Current welcome message:\n━━━━━━━━━━━━━━━━━━━━━━\n{current_msg[:500]}\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Send the new welcome message.\n\n"
+        f"*Available placeholders:*\n"
+        f"• `{{user_id}}` - User's Telegram ID\n"
+        f"• `{{total_projects}}` - Total projects count\n"
+        f"• `{{running_count}}` - Running projects count\n"
+        f"• `{{role}}` - User role (USER/ADMIN)\n\n"
+        f"Type `/cancel` to cancel.",
+        call.message.chat.id, call.message.message_id, parse_mode="Markdown"
+    )
+    bot.register_next_step_handler(call.message, save_new_welcome)
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_reset_welcome")
+def admin_reset_welcome(call):
+    if call.message.chat.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "Admin only!")
+        return
+    
+    save_welcome_message(DEFAULT_WELCOME)
+    bot.edit_message_text(
+        "✅ *Welcome message reset to default!*\n\n"
+        "The welcome message has been restored to the original.",
+        call.message.chat.id, call.message.message_id, parse_mode="Markdown"
+    )
+    bot.answer_callback_query(call.id)
+
+def save_new_welcome(msg):
+    if msg.text == "/cancel":
+        safe_send_message(msg.chat.id, "❌ Cancelled.", reply_markup=get_main_keyboard(msg.chat.id))
+        return
+    
+    if msg.chat.id != ADMIN_ID:
+        safe_send_message(msg.chat.id, "⛔ Admin only!")
+        return
+    
+    new_message = msg.text
+    if save_welcome_message(new_message):
+        safe_send_message(msg.chat.id, "✅ *Welcome message updated successfully!*\n\nNew users will see this message.", parse_mode="Markdown")
+    else:
+        safe_send_message(msg.chat.id, "❌ *Failed to save welcome message!*", parse_mode="Markdown")
 
 # ============== GITHUB INTEGRATION ==============
 
@@ -554,7 +663,7 @@ def start(msg):
     total_projects = len(get_user_projects(user_id))
     running_count = len(get_user_running_projects(user_id))
     
-    # Send video with stylish welcome text as caption
+    # Send video with welcome text as caption
     video_sent = send_start_video_with_text(user_id, user_id, is_admin, total_projects, running_count)
     
     # If video failed, send only text
@@ -1460,7 +1569,7 @@ monitor_thread.start()
 # ============== BOT STARTUP ==============
 
 print("="*50)
-print("  ✦  H E X   •   B O T   •   H O S T I N G  ✦")
+print("✦  H E X   •   B O T   •   H O S T I N G  ✦")
 print("="*50)
 print("✅ Bot Running Successfully!")
 print(f"📁 Base Directory: {BASE_DIR}")
@@ -1468,10 +1577,8 @@ print(f"👥 Multi-User Support: ENABLED")
 print(f"🔒 Private Workspaces: YES")
 print(f"👑 Admin ID: {ADMIN_ID}")
 print(f"🐙 GitHub Integration: ENHANCED")
-print(f"🔍 Auto-Detection: main.py, app.py, bot.py, run.py, server.py")
-print(f"🔧 Project Types: Django, Flask, FastAPI, Discord, Telegram")
-print(f"⚙️ Environment Variables: ENABLED")
-print(f"🗑️ Auto-Delete Messages: 30 seconds")
+print(f"📝 Custom Welcome Message: ENABLED")
+print(f"🗑️ Auto-Delete Messages: 30 seconds (FIXED)")
 print("="*50)
 
 while True:
